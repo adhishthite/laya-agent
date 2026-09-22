@@ -7,6 +7,7 @@ import httpx
 from dotenv import load_dotenv
 
 from laya_agent.config import Settings
+from laya_agent.errors import summarise_http_error
 from laya_agent.models import QuestionType, SourceContribution, System1Decision
 
 
@@ -110,7 +111,14 @@ class System1JevClient:
         with httpx.Client(timeout=self.settings.laya_timeout_seconds) as client:
             response = client.post(self.settings.jev_endpoint, headers=headers, json=payload)
             if response.status_code != 200:
-                raise RuntimeError(f"Jev API returned HTTP {response.status_code}: {response.text}")
+                raise RuntimeError(
+                    summarise_http_error(
+                        "Jev API",
+                        self.settings.jev_endpoint,
+                        response.status_code,
+                        response.text,
+                    )
+                )
             return response.json()
 
     def _compute_leave_one_out(

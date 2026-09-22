@@ -1,0 +1,49 @@
+export interface SourceContribution {
+  source_text: string;
+  impact_points: number;
+  is_supporting: boolean;
+}
+
+export interface System2Synthesis {
+  explanation: string;
+  latency_ms: number;
+}
+
+export interface DecisionResult {
+  query: string;
+  decision: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  handled_by: string;
+  search_enabled: boolean;
+  evidence: string[];
+  sources: SourceContribution[];
+  system2_synthesis?: System2Synthesis;
+  total_latency_ms: number;
+}
+
+export interface System1Decision {
+  choice?: string;
+  score?: number;
+  probabilities: Record<string, number>;
+  confidence: number;
+  latency_ms: number;
+  sources: SourceContribution[];
+}
+
+export interface ComparisonResult {
+  query: string;
+  evidence: string[];
+  laya: System1Decision;
+  jev: System1Decision;
+  agreement: boolean;
+  latency_diff_ms: number;
+  speedup_factor: number;
+  total_latency_ms: number;
+}
+
+export interface Scenario {
+  label: string;
+  query: string;
+  criteria: string;
+}

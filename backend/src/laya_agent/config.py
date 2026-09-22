@@ -1,8 +1,20 @@
 """Configuration settings for Laya Agent."""
 
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Load local overrides before any field default reads the environment.
+# Precedence: real environment > backend/.env > repo root .env > ~/.env.
+for _candidate in (
+    Path(__file__).resolve().parents[2] / ".env",
+    Path(__file__).resolve().parents[3] / ".env",
+    Path.home() / ".env",
+):
+    if _candidate.is_file():
+        load_dotenv(_candidate, override=False)
 
 
 class Settings(BaseModel):

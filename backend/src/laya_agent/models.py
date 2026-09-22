@@ -51,6 +51,8 @@ class DecisionResult(BaseModel):
     confidence: float
     probabilities: dict[str, float]
     handled_by: str  # "System 1 (Laya)" or "System 2 (Gemini Deliberation)"
+    search_enabled: bool = False
+    evidence: list[str] = Field(default_factory=list)
     sources: list[SourceContribution] = Field(default_factory=list)
     system2_synthesis: System2Synthesis | None = None
     total_latency_ms: float = 0.0

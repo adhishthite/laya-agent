@@ -6,6 +6,7 @@ import httpx
 
 from laya_agent.auth import get_identity_token
 from laya_agent.config import Settings
+from laya_agent.errors import summarise_http_error
 from laya_agent.models import QuestionType, SourceContribution, System1Decision
 
 
@@ -105,7 +106,12 @@ class System1LayaClient:
             response = client.post(self.settings.laya_endpoint, headers=headers, json=payload)
             if response.status_code != 200:
                 raise RuntimeError(
-                    f"Laya proxy returned HTTP {response.status_code}: {response.text}"
+                    summarise_http_error(
+                        "Laya proxy",
+                        self.settings.laya_endpoint,
+                        response.status_code,
+                        response.text,
+                    )
                 )
             return response.json()
 

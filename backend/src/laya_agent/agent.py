@@ -92,6 +92,8 @@ class DualProcessAgent:
             confidence=s1_decision.confidence,
             probabilities=s1_decision.probabilities,
             handled_by=handled_by,
+            search_enabled=enable_search,
+            evidence=evidence_list,
             sources=s1_decision.sources,
             system2_synthesis=s2_synthesis,
             total_latency_ms=total_latency_ms,

@@ -30,11 +30,25 @@ User Query ──> [ Gemini 3.5 Flash-Lite ] (System 2 Grounding)
 
 ## Installation & Setup
 
-Ensure `uv` is installed:
+Install the backend dependencies with `uv` and the frontend with `bun`:
 
 ```bash
-cd /usr/local/google/home/adhishthite/.gemini/jetski/scratch/laya-agent
-uv sync
+make -C backend clean && cd backend && uv sync && cd ..
+cd frontend && bun install && cd ..
+```
+
+Configure the endpoints. The committed defaults are placeholders, so the agent
+returns HTTP 404 until you supply your own:
+
+```bash
+cp backend/.env.example backend/.env
+# edit backend/.env and set LAYA_ENDPOINT and GOOGLE_CLOUD_PROJECT
+```
+
+Then start both services:
+
+```bash
+make dev
 ```
 
 ## Quick Start
