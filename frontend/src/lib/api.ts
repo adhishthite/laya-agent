@@ -1,4 +1,4 @@
-import type { ComparisonResult, DecisionResult } from "./types";
+import type { ComparisonResult, DecisionResult, Outcome } from "./types";
 
 export interface RunOptions {
   query: string;
@@ -43,16 +43,18 @@ export function runComparison(opts: RunOptions): Promise<ComparisonResult> {
   });
 }
 
-/** Parse "key:description" lines into a criteria map. */
-export function parseCriteria(raw: string): Record<string, string> {
-  const parsed: Record<string, string> = {};
-  for (const line of raw.split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx > 0) {
-      const key = line.slice(0, idx).trim();
-      const description = line.slice(idx + 1).trim();
-      if (key) parsed[key] = description;
-    }
+/** Serialise outcomes into the criteria map the API expects. */
+export function toCriteria(outcomes: Outcome[]): Record<string, string> {
+  const criteria: Record<string, string> = {};
+  for (const { key, description } of outcomes) {
+    const trimmed = key.trim();
+    if (trimmed) criteria[trimmed] = description.trim();
   }
-  return Object.keys(parsed).length > 0 ? parsed : { yes: "Affirmative", no: "Negative" };
+  return criteria;
+}
+
+/** A decision needs at least two distinct, named outcomes to choose between. */
+export function outcomesAreValid(outcomes: Outcome[]): boolean {
+  const keys = outcomes.map((o) => o.key.trim()).filter(Boolean);
+  return keys.length >= 2 && new Set(keys).size === keys.length;
 }

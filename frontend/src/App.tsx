@@ -11,36 +11,59 @@ import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { EvidenceLedger } from "./components/EvidenceLedger";
 import { Logo } from "./components/Logo";
+import { OutcomeEditor } from "./components/OutcomeEditor";
 import { ProbabilityTrack } from "./components/ProbabilityTrack";
 import { Prose } from "./components/Prose";
-import { parseCriteria, runComparison, runDecision } from "./lib/api";
-import type { ComparisonResult, DecisionResult, Scenario, System1Decision } from "./lib/types";
+import { outcomesAreValid, runComparison, runDecision, toCriteria } from "./lib/api";
+import type {
+  ComparisonResult,
+  DecisionResult,
+  Outcome,
+  Scenario,
+  System1Decision,
+} from "./lib/types";
 
 const SCENARIOS: Scenario[] = [
   {
     label: "Umbrella in Tokyo",
     query: "Should I take an umbrella in Tokyo today?",
-    criteria: "yes:Rain is likely\nno:Dry weather",
+    outcomes: [
+      { key: "yes", description: "Rain is likely" },
+      { key: "no", description: "Dry weather" },
+    ],
   },
   {
     label: "Starship booster catch",
     query: "Did SpaceX catch the Super Heavy booster on the launch tower?",
-    criteria: "yes:Caught by the tower\nno:Lost or ocean splashdown",
+    outcomes: [
+      { key: "yes", description: "Caught by the tower" },
+      { key: "no", description: "Lost or ocean splashdown" },
+    ],
   },
   {
     label: "iPhone 18 Pro shipping",
     query: "Has Apple officially released the iPhone 18 Pro to consumers?",
-    criteria: "yes:On sale now\nno:Unreleased or rumour",
+    outcomes: [
+      { key: "yes", description: "On sale now" },
+      { key: "no", description: "Unreleased or rumour" },
+    ],
   },
   {
     label: "Fed rate cut",
     query: "Did the Federal Reserve cut interest rates at its latest FOMC meeting?",
-    criteria: "yes:Cut rates\nno:Held or raised",
+    outcomes: [
+      { key: "yes", description: "Cut rates" },
+      { key: "no", description: "Held or raised" },
+    ],
   },
   {
     label: "Outage triage",
     query: "Database deadlock in the primary transaction cluster, 500s rising.",
-    criteria: "critical:Page tier-1 now\nlow:Standard queue",
+    outcomes: [
+      { key: "critical", description: "Page tier-1 now" },
+      { key: "high", description: "Queue for the on-call" },
+      { key: "low", description: "Standard backlog" },
+    ],
   },
 ];
 
@@ -49,7 +72,7 @@ type Mode = "decide" | "compare";
 export function App() {
   const [mode, setMode] = useState<Mode>("decide");
   const [query, setQuery] = useState(SCENARIOS[0].query);
-  const [criteria, setCriteria] = useState(SCENARIOS[0].criteria);
+  const [outcomes, setOutcomes] = useState<Outcome[]>(SCENARIOS[0].outcomes);
   const [grounding, setGrounding] = useState(true);
   const [attribution, setAttribution] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -58,8 +81,10 @@ export function App() {
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  const canRun = query.trim() !== "" && outcomesAreValid(outcomes);
+
   async function run() {
-    if (!query.trim() || loading) return;
+    if (!canRun || loading) return;
     setLoading(true);
     setError(null);
     setDecision(null);
@@ -67,7 +92,7 @@ export function App() {
 
     const opts = {
       query: query.trim(),
-      criteria: parseCriteria(criteria),
+      criteria: toCriteria(outcomes),
       enableSearch: grounding,
       computeAttribution: attribution,
     };
@@ -109,7 +134,7 @@ export function App() {
                   type="button"
                   onClick={() => {
                     setQuery(s.query);
-                    setCriteria(s.criteria);
+                    setOutcomes(s.outcomes);
                   }}
                   className={`rounded-full border px-3.5 py-1.5 text-[13px] transition-colors ${
                     active
@@ -126,8 +151,8 @@ export function App() {
           <Console
             query={query}
             onQuery={setQuery}
-            criteria={criteria}
-            onCriteria={setCriteria}
+            outcomes={outcomes}
+            onOutcomes={setOutcomes}
             grounding={grounding}
             onGrounding={setGrounding}
             attribution={attribution}
@@ -135,6 +160,7 @@ export function App() {
             mode={mode}
             onMode={setMode}
             loading={loading}
+            canRun={canRun}
             onRun={run}
           />
 
@@ -234,8 +260,8 @@ function TopRail() {
 interface ConsoleProps {
   query: string;
   onQuery: (v: string) => void;
-  criteria: string;
-  onCriteria: (v: string) => void;
+  outcomes: Outcome[];
+  onOutcomes: (v: Outcome[]) => void;
   grounding: boolean;
   onGrounding: (v: boolean) => void;
   attribution: boolean;
@@ -243,6 +269,7 @@ interface ConsoleProps {
   mode: Mode;
   onMode: (v: Mode) => void;
   loading: boolean;
+  canRun: boolean;
   onRun: () => void;
 }
 
@@ -260,17 +287,8 @@ function Console(p: ConsoleProps) {
         className="w-full resize-none bg-transparent px-6 pb-4 pt-5 text-lg leading-snug text-ink placeholder:text-ink-faint focus:outline-none"
       />
 
-      <div className="flex flex-col gap-3 border-t border-rule px-6 py-3.5 sm:flex-row sm:items-center">
-        <label htmlFor="outcomes" className="font-mono text-xs text-ink-faint">
-          outcomes
-        </label>
-        <input
-          id="outcomes"
-          value={criteriaToLine(p.criteria)}
-          onChange={(e) => p.onCriteria(lineToCriteria(e.target.value))}
-          spellCheck={false}
-          className="tnum w-full min-w-0 bg-transparent text-[13px] text-ink-soft focus:text-ink focus:outline-none"
-        />
+      <div className="border-t border-rule px-6 py-3.5">
+        <OutcomeEditor outcomes={p.outcomes} onChange={p.onOutcomes} />
       </div>
 
       <div className="flex flex-col gap-4 border-t border-rule bg-sunken px-6 py-3.5 sm:flex-row sm:items-center sm:justify-between">
@@ -298,7 +316,7 @@ function Console(p: ConsoleProps) {
           <button
             type="button"
             onClick={p.onRun}
-            disabled={p.loading || !p.query.trim()}
+            disabled={p.loading || !p.canRun}
             className="flex items-center gap-2 rounded-lg bg-ink px-5 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
           >
             {p.loading ? (
@@ -543,21 +561,4 @@ function EngineCard({
       <EvidenceLedger sources={data.sources} />
     </Panel>
   );
-}
-
-/** The criteria map is edited as one compact line: "yes:Rain likely, no:Dry". */
-function criteriaToLine(raw: string): string {
-  return raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .join(", ");
-}
-
-function lineToCriteria(line: string): string {
-  return line
-    .split(",")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .join("\n");
 }

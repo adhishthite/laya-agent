@@ -42,8 +42,14 @@ export interface ComparisonResult {
   total_latency_ms: number;
 }
 
+/** One answer the model may return, paired with the condition it stands for. */
+export interface Outcome {
+  key: string;
+  description: string;
+}
+
 export interface Scenario {
   label: string;
   query: string;
-  criteria: string;
+  outcomes: Outcome[];
 }
