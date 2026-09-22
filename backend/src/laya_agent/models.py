@@ -41,7 +41,12 @@ class SourceContribution(BaseModel):
 
 
 class System1Decision(BaseModel):
-    """Raw output from Laya System 1."""
+    """Raw output from a System 1 engine.
+
+    An engine that could not answer returns this with `error` set and every
+    other field left at its default. Callers check `error` rather than catching,
+    because one dead engine must not cancel the ones that still work.
+    """
 
     decision_key: str
     type: QuestionType
@@ -51,6 +56,7 @@ class System1Decision(BaseModel):
     confidence: float = 0.0
     latency_ms: float = 0.0
     sources: list[SourceContribution] = Field(default_factory=list)
+    error: str | None = None
 
 
 class System2Synthesis(BaseModel):
@@ -75,16 +81,24 @@ class DecisionResult(BaseModel):
     sources: list[SourceContribution] = Field(default_factory=list)
     system2_synthesis: System2Synthesis | None = None
     total_latency_ms: float = 0.0
+    # Set when Laya could not answer. The result still carries System 2's
+    # deliberation, so the caller gets a reasoned answer rather than a 500.
+    system1_error: str | None = None
 
 
 class ComparisonResult(BaseModel):
-    """Side-by-side comparison of Laya vs Jev."""
+    """Side-by-side comparison of Laya vs Jev.
+
+    The three comparison metrics are None whenever either engine failed. A
+    speedup against an engine that never answered is not a slow result, it is
+    no result, and reporting 0.0 would read as a real measurement.
+    """
 
     query: str
     evidence: list[str] = Field(default_factory=list)
     laya: System1Decision
     jev: System1Decision
-    agreement: bool
-    latency_diff_ms: float
-    speedup_factor: float
+    agreement: bool | None = None
+    latency_diff_ms: float | None = None
+    speedup_factor: float | None = None
     total_latency_ms: float = 0.0

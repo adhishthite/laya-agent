@@ -1,13 +1,43 @@
 """Dual-Process Agent Orchestrator combining System 1 (Laya / Jev) and System 2 (Gemini)."""
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from laya_agent.config import Settings
-from laya_agent.models import ComparisonResult, DecisionResult, QuestionType
+from laya_agent.models import (
+    ComparisonResult,
+    DecisionResult,
+    QuestionType,
+    System1Decision,
+)
 from laya_agent.system1_jev import System1JevClient
 from laya_agent.system1_laya import System1LayaClient
 from laya_agent.system2_gemini import System2GeminiClient
+
+
+def _run_engine(
+    predict: Callable[..., System1Decision],
+    engine: str,
+    question_type: QuestionType,
+    **kwargs: object,
+) -> System1Decision:
+    """Call one System 1 engine and turn any failure into a marked result.
+
+    The engines are independent backends: Laya runs on a preemptible GPU VM, Jev
+    on a third-party API. Letting one raise would cancel the other's result even
+    though it arrived fine, so the failure is captured and returned instead.
+    """
+    start = time.perf_counter()
+    try:
+        return predict(question_type=question_type, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - the reason is reported, not swallowed
+        return System1Decision(
+            decision_key="decision",
+            type=question_type,
+            latency_ms=(time.perf_counter() - start) * 1000.0,
+            error=f"{engine} is unavailable. {exc}",
+        )
 
 
 class DualProcessAgent:
@@ -61,23 +91,35 @@ class DualProcessAgent:
             evidence_list = self.system2.search_web(query)
 
         # Step 2: Fast System 1 Inference (ConvAI Laya)
-        s1_decision = self.system1.predict(
+        s1_decision = _run_engine(
+            self.system1.predict,
+            "Laya",
+            question_type,
             query=query,
             criteria=criteria,
-            question_type=question_type,
             instructions=instructions,
             evidence_list=evidence_list,
             compute_attribution=compute_attribution,
         )
 
-        decision_val = s1_decision.choice or str(s1_decision.score or "undecided")
-        handled_by = "System 1 (Laya)"
+        # Step 3: Decide who answers.
+        #
+        # Laya runs on a preemptible GPU VM, so it can vanish mid-session. When
+        # it does, Gemini answers alone rather than the request failing: the
+        # evidence is already gathered and System 2 can reason over it without
+        # any System 1 prior.
         s2_synthesis = None
+        if s1_decision.error is not None:
+            decision_val = "unavailable"
+            handled_by = "System 2 (Gemini alone, Laya unavailable)"
+        else:
+            decision_val = s1_decision.choice or str(s1_decision.score or "undecided")
+            handled_by = "System 1 (Laya)"
 
-        # Step 3: Check confidence threshold
         is_uncertain = s1_decision.confidence < self.settings.confidence_threshold
-        if is_uncertain or force_system2:
-            handled_by = "System 2 (Gemini Deliberation)"
+        if s1_decision.error is not None or is_uncertain or force_system2:
+            if s1_decision.error is None:
+                handled_by = "System 2 (Gemini Deliberation)"
             s2_synthesis = self.system2.deliberate(
                 query=query,
                 evidence=evidence_list,
@@ -97,6 +139,7 @@ class DualProcessAgent:
             sources=s1_decision.sources,
             system2_synthesis=s2_synthesis,
             total_latency_ms=total_latency_ms,
+            system1_error=s1_decision.error,
         )
 
     def compare(
@@ -128,22 +171,29 @@ class DualProcessAgent:
         if enable_search:
             evidence_list = self.system2.search_web(query)
 
-        # Step 2: Execute Laya and Jev in parallel
+        # Step 2: Execute Laya and Jev in parallel.
+        #
+        # Each engine is wrapped, so a dead GPU VM costs the Laya column and
+        # nothing else. Jev's answer still arrives and is still rendered.
         with ThreadPoolExecutor(max_workers=2) as executor:
             laya_future = executor.submit(
+                _run_engine,
                 self.system1.predict,
+                "Laya",
+                question_type,
                 query=query,
                 criteria=criteria,
-                question_type=question_type,
                 instructions=instructions,
                 evidence_list=evidence_list,
                 compute_attribution=compute_attribution,
             )
             jev_future = executor.submit(
+                _run_engine,
                 self.jev.predict,
+                "Jev",
+                question_type,
                 query=query,
                 criteria=criteria,
-                question_type=question_type,
                 instructions=instructions,
                 evidence_list=evidence_list,
                 compute_attribution=compute_attribution,
@@ -153,9 +203,19 @@ class DualProcessAgent:
             jev_decision = jev_future.result()
 
         total_latency_ms = (time.perf_counter() - overall_start) * 1000.0
-        agreement = laya_decision.choice == jev_decision.choice
-        latency_diff_ms = round(jev_decision.latency_ms - laya_decision.latency_ms, 2)
-        speedup = round(jev_decision.latency_ms / max(laya_decision.latency_ms, 0.001), 2)
+
+        # Only compare what both engines actually produced. A speedup measured
+        # against a failure is not a fast result, it is no result.
+        both_answered = laya_decision.error is None and jev_decision.error is None
+        agreement = laya_decision.choice == jev_decision.choice if both_answered else None
+        latency_diff_ms = (
+            round(jev_decision.latency_ms - laya_decision.latency_ms, 2) if both_answered else None
+        )
+        speedup = (
+            round(jev_decision.latency_ms / max(laya_decision.latency_ms, 0.001), 2)
+            if both_answered
+            else None
+        )
 
         return ComparisonResult(
             query=query,

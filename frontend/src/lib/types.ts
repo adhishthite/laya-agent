@@ -31,6 +31,8 @@ export interface DecisionResult {
   sources: SourceContribution[];
   system2_synthesis?: System2Synthesis;
   total_latency_ms: number;
+  /** Set when Laya could not answer. Gemini answered alone. */
+  system1_error?: string | null;
 }
 
 export interface System1Decision {
@@ -40,6 +42,8 @@ export interface System1Decision {
   confidence: number;
   latency_ms: number;
   sources: SourceContribution[];
+  /** Set when this engine failed. Every other field is then empty. */
+  error?: string | null;
 }
 
 export interface ComparisonResult {
@@ -47,9 +51,10 @@ export interface ComparisonResult {
   evidence: string[];
   laya: System1Decision;
   jev: System1Decision;
-  agreement: boolean;
-  latency_diff_ms: number;
-  speedup_factor: number;
+  /** Null when either engine failed: there is nothing to compare. */
+  agreement: boolean | null;
+  latency_diff_ms: number | null;
+  speedup_factor: number | null;
   total_latency_ms: number;
 }
 

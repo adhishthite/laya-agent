@@ -445,6 +445,9 @@ function DecisionView({ result }: { result: DecisionResult }) {
   const reduced = useReducedMotion();
   const escalated = result.handled_by.startsWith("System 2");
   const tone = escalated ? "slow" : "fast";
+  // Laya runs on a preemptible GPU VM. When it is gone, Gemini answers alone
+  // and the verdict panel reports that instead of a decision it never made.
+  const fastLaneDown = Boolean(result.system1_error);
 
   return (
     <motion.div
@@ -460,39 +463,55 @@ function DecisionView({ result }: { result: DecisionResult }) {
           right={
             <span
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                escalated ? "bg-slow-weak text-slow" : "bg-fast-weak text-fast"
+                fastLaneDown
+                  ? "bg-alert-weak text-alert"
+                  : escalated
+                    ? "bg-slow-weak text-slow"
+                    : "bg-fast-weak text-fast"
               }`}
             >
-              {escalated ? (
+              {fastLaneDown ? (
+                <Warning size={13} weight="fill" />
+              ) : escalated ? (
                 <Brain size={13} weight="fill" />
               ) : (
                 <Lightning size={13} weight="fill" />
               )}
-              {escalated ? "System 2" : "System 1"}
+              {fastLaneDown ? "System 2 only" : escalated ? "System 2" : "System 1"}
             </span>
           }
         >
-          <div className="px-7 py-6">
-            <p
-              className={`font-display text-5xl font-semibold tracking-[-0.03em] ${
-                escalated ? "text-slow" : "text-fast"
-              }`}
-            >
-              {result.decision}
-            </p>
-            <div className="mt-6">
-              <ProbabilityTrack
-                probabilities={result.probabilities}
-                winner={result.decision}
-                tone={tone}
-              />
+          {fastLaneDown ? (
+            <div className="flex items-start gap-3 px-7 py-6">
+              <Warning size={20} weight="fill" className="mt-0.5 shrink-0 text-alert" />
+              <p className="text-sm leading-relaxed text-ink-soft">{result.system1_error}</p>
             </div>
-          </div>
+          ) : (
+            <div className="px-7 py-6">
+              <p
+                className={`font-display text-5xl font-semibold tracking-[-0.03em] ${
+                  escalated ? "text-slow" : "text-fast"
+                }`}
+              >
+                {result.decision}
+              </p>
+              <div className="mt-6">
+                <ProbabilityTrack
+                  probabilities={result.probabilities}
+                  winner={result.decision}
+                  tone={tone}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4 border-t border-rule bg-sunken px-7 py-4">
-            <Stat label="confidence" value={result.confidence.toFixed(4)} />
+            <Stat label="confidence" value={fastLaneDown ? "—" : result.confidence.toFixed(4)} />
             <Stat label="latency" value={`${Math.round(result.total_latency_ms)} ms`} />
-            <Stat label="route" value={escalated ? "escalated" : "direct"} />
+            <Stat
+              label="route"
+              value={fastLaneDown ? "degraded" : escalated ? "escalated" : "direct"}
+            />
           </div>
         </Panel>
 
@@ -533,6 +552,12 @@ function DecisionView({ result }: { result: DecisionResult }) {
 }
 function CompareView({ result }: { result: ComparisonResult }) {
   const reduced = useReducedMotion();
+  // Only one lane may have answered. Everything that needs both is withheld
+  // rather than shown as a zero, which would read as a real measurement.
+  const bothAnswered = result.agreement !== null;
+  const downEngines = [result.laya.error ? "Laya" : null, result.jev.error ? "Jev" : null].filter(
+    Boolean,
+  );
   const faster = result.laya.latency_ms <= result.jev.latency_ms ? "Laya" : "Jev";
 
   return (
@@ -544,19 +569,37 @@ function CompareView({ result }: { result: ComparisonResult }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-5">
         <div className="flex items-center gap-3">
-          <Scales
-            size={22}
-            weight="fill"
-            className={result.agreement ? "text-fast" : "text-alert"}
-          />
+          {bothAnswered ? (
+            <Scales
+              size={22}
+              weight="fill"
+              className={result.agreement ? "text-fast" : "text-alert"}
+            />
+          ) : (
+            <Warning size={22} weight="fill" className="text-alert" />
+          )}
           <p className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
-            {result.agreement ? "Both models agree" : "The models disagree"}
+            {bothAnswered
+              ? result.agreement
+                ? "Both models agree"
+                : "The models disagree"
+              : `${downEngines.join(" and ")} did not answer`}
           </p>
         </div>
         <div className="flex gap-8">
-          <Stat label="faster" value={faster} />
-          <Stat label="speedup" value={`${result.speedup_factor.toFixed(2)}x`} />
-          <Stat label="gap" value={`${Math.round(Math.abs(result.latency_diff_ms))} ms`} />
+          <Stat label="faster" value={bothAnswered ? faster : "—"} />
+          <Stat
+            label="speedup"
+            value={result.speedup_factor === null ? "—" : `${result.speedup_factor.toFixed(2)}x`}
+          />
+          <Stat
+            label="gap"
+            value={
+              result.latency_diff_ms === null
+                ? "—"
+                : `${Math.round(Math.abs(result.latency_diff_ms))} ms`
+            }
+          />
         </div>
       </div>
 
@@ -579,6 +622,22 @@ function EngineCard({
 }) {
   const outcome = data.choice ?? (data.score !== undefined ? data.score.toFixed(3) : "n/a");
   const colour = tone === "fast" ? "text-fast" : "text-slow";
+
+  // The card keeps its slot in the grid so the surviving engine does not jump
+  // across the page when its neighbour dies.
+  if (data.error) {
+    return (
+      <Panel
+        title={name.toLowerCase()}
+        right={<span className="text-[11px] text-alert">unavailable</span>}
+      >
+        <div className="flex items-start gap-3 px-7 py-6">
+          <Warning size={20} weight="fill" className="mt-0.5 shrink-0 text-alert" />
+          <p className="text-sm leading-relaxed text-ink-soft">{data.error}</p>
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel
