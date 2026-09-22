@@ -13,11 +13,11 @@ export function Logo({ size = 28 }: LogoProps) {
       role="img"
       aria-label="Decision Bench"
     >
-      <rect width="32" height="32" rx="7" className="fill-ink" />
-      <rect x="5" y="13" width="14" height="6" rx="3" className="fill-fast" />
-      <rect x="20" y="13" width="7" height="6" rx="3" fill="oklch(0.42 0.015 250)" />
-      <rect x="18.1" y="6.5" width="1.8" height="19" rx="0.9" className="fill-ink" />
-      <rect x="18.55" y="7" width="0.9" height="18" rx="0.45" className="fill-paper" />
+      <rect width="32" height="32" rx="7" className="fill-mark" />
+      <rect x="5" y="13" width="14" height="6" rx="3" className="fill-mark-bright" />
+      <rect x="20" y="13" width="7" height="6" rx="3" className="fill-mark-mute" />
+      <rect x="18.1" y="6.5" width="1.8" height="19" rx="0.9" className="fill-mark" />
+      <rect x="18.55" y="7" width="0.9" height="18" rx="0.45" className="fill-mark-ink" />
     </svg>
   );
 }

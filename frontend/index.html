@@ -4,12 +4,27 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f5f6f8" />
+    <meta name="theme-color" content="#f5f7f9" />
     <meta
       name="description"
       content="Route a decision to a calibrated sub-second decision model. Escalate only the uncertain ones to a reasoning model."
     />
     <title>Decision Bench</title>
+    <script>
+      // Paint the right theme on the first frame. Any later and the page flashes.
+      (function () {
+        try {
+          var stored = localStorage.getItem("bench-theme");
+          var dark =
+            stored === "dark" ||
+            (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            document.querySelector('meta[name="theme-color"]').content = "#0d1116";
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

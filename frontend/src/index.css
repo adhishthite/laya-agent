@@ -3,35 +3,97 @@
 @import "@fontsource/ibm-plex-mono/latin-400.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 
+/* ---------------------------------------------------------------------------
+   Palette
+
+   Every value is OKLCH and every chroma sits inside the sRGB gamut, so the
+   number written here is the number that renders. The signal pair is a
+   thermometer: `fast` is a hot reflex orange, `slow` is a cool deliberate
+   blue. `alert` stays crimson and is never reused for anything but opposition.
+
+   Contrast floors held on both themes: ink 7:1, ink-soft 4.5:1, ink-faint
+   3:1, every signal 4.5:1 on panel, on paper and on its own -weak tint.
+   --------------------------------------------------------------------------- */
+
 @theme {
-  /* Surfaces — cool technical paper, not warm cream */
-  --color-paper: oklch(0.975 0.003 240);
+  /* Surfaces */
+  --color-paper: oklch(0.975 0.003 258);
   --color-panel: oklch(1 0 0);
-  --color-sunken: oklch(0.955 0.004 240);
+  --color-sunken: oklch(0.965 0.004 258);
 
   /* Ink */
-  --color-ink: oklch(0.22 0.014 250);
-  --color-ink-soft: oklch(0.48 0.012 250);
-  --color-ink-faint: oklch(0.64 0.01 250);
+  --color-ink: oklch(0.23 0.014 258);
+  --color-ink-soft: oklch(0.48 0.012 258);
+  --color-ink-faint: oklch(0.62 0.01 258);
 
   /* Rules */
-  --color-rule: oklch(0.905 0.005 250);
-  --color-rule-strong: oklch(0.84 0.008 250);
+  --color-rule: oklch(0.915 0.005 258);
+  --color-rule-strong: oklch(0.855 0.008 258);
+  --color-grid: oklch(0.855 0.008 258 / 0.45);
 
   /* Signals */
-  --color-fast: oklch(0.58 0.15 162);
-  --color-fast-weak: oklch(0.94 0.04 162);
-  --color-slow: oklch(0.52 0.16 272);
-  --color-slow-weak: oklch(0.945 0.035 272);
-  --color-alert: oklch(0.56 0.19 28);
-  --color-alert-weak: oklch(0.95 0.04 28);
+  --color-fast: oklch(0.53 0.146 47);
+  --color-fast-weak: oklch(0.955 0.025 47);
+  --color-slow: oklch(0.5 0.15 258);
+  --color-slow-weak: oklch(0.955 0.021 258);
+  --color-alert: oklch(0.55 0.2 18);
+  --color-alert-weak: oklch(0.955 0.022 18);
+
+  /* Selected state. Its own pair, because inverting `ink` in dark turns every
+     selected chip into a glaring white pill. */
+  --color-selected: oklch(0.23 0.014 258);
+  --color-selected-ink: oklch(0.975 0.003 258);
+
+  /* Brand mark. Fixed in both themes: a mark that inverts is a different mark. */
+  --color-mark: oklch(0.23 0.014 258);
+  --color-mark-bright: oklch(0.78 0.15 62);
+  --color-mark-mute: oklch(0.46 0.015 258);
+  --color-mark-ink: oklch(0.975 0.003 258);
+
+  --shadow-panel:
+    0 1px 2px oklch(0.23 0.014 258 / 0.05), 0 14px 34px -20px oklch(0.23 0.014 258 / 0.3);
+  --shadow-accent:
+    0 1px 2px oklch(0.53 0.146 47 / 0.24), 0 8px 20px -10px oklch(0.53 0.146 47 / 0.45);
 
   --font-display: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* Unlayered, so these override the `@layer theme` defaults above. */
+:root.dark {
+  --color-paper: oklch(0.175 0.012 258);
+  --color-panel: oklch(0.215 0.013 258);
+  --color-sunken: oklch(0.255 0.013 258);
+
+  --color-ink: oklch(0.955 0.004 258);
+  --color-ink-soft: oklch(0.745 0.012 258);
+  --color-ink-faint: oklch(0.595 0.014 258);
+
+  --color-rule: oklch(0.295 0.014 258);
+  --color-rule-strong: oklch(0.375 0.016 258);
+  --color-grid: oklch(0.375 0.016 258 / 0.55);
+
+  --color-fast: oklch(0.78 0.15 62);
+  --color-fast-weak: oklch(0.31 0.055 55);
+  --color-slow: oklch(0.74 0.115 255);
+  --color-slow-weak: oklch(0.305 0.055 258);
+  --color-alert: oklch(0.7 0.17 20);
+  --color-alert-weak: oklch(0.315 0.07 18);
+
+  --color-selected: oklch(0.45 0.017 258);
+  --color-selected-ink: oklch(0.985 0.003 258);
+
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.4), 0 14px 34px -20px oklch(0 0 0 / 0.7);
+  --shadow-accent: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 20px -10px oklch(0.78 0.15 62 / 0.35);
+}
+
 html {
   background-color: var(--color-paper);
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -65,8 +127,8 @@ body {
   z-index: -1;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, oklch(0.87 0.008 250 / 0.38) 1px, transparent 1px),
-    linear-gradient(to bottom, oklch(0.87 0.008 250 / 0.38) 1px, transparent 1px);
+    linear-gradient(to right, var(--color-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid) 1px, transparent 1px);
   background-size: 88px 88px;
   mask-image: radial-gradient(100% 78% at 30% 0%, black, transparent 78%);
 }
@@ -79,8 +141,9 @@ button {
 
 input:focus-visible,
 textarea:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--color-ink);
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-fast);
   outline-offset: 2px;
 }
 

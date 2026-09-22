@@ -3,7 +3,9 @@ import {
   Brain,
   CircleNotch,
   Lightning,
+  Moon,
   Scales,
+  Sun,
   Warning,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -15,6 +17,7 @@ import { OutcomeEditor } from "./components/OutcomeEditor";
 import { ProbabilityTrack } from "./components/ProbabilityTrack";
 import { Prose } from "./components/Prose";
 import { outcomesAreValid, runComparison, runDecision, toCriteria } from "./lib/api";
+import { useTheme } from "./lib/theme";
 import type {
   ComparisonResult,
   DecisionResult,
@@ -138,7 +141,7 @@ export function App() {
                   }}
                   className={`rounded-full border px-3.5 py-1.5 text-[13px] transition-colors ${
                     active
-                      ? "border-ink bg-ink text-paper"
+                      ? "border-selected bg-selected text-selected-ink"
                       : "border-rule-strong bg-panel text-ink-soft hover:border-ink hover:text-ink"
                   }`}
                 >
@@ -229,6 +232,9 @@ function IdleState({ mode }: { mode: Mode }) {
 }
 
 function TopRail() {
+  const [theme, toggleTheme] = useTheme();
+  const dark = theme === "dark";
+
   return (
     <header className="sticky top-0 z-20 border-b border-rule bg-paper/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-6">
@@ -238,7 +244,7 @@ function TopRail() {
             Decision Bench
           </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <span className="tnum hidden text-xs text-ink-faint sm:inline">
             laya + gemini-3.5-flash-lite
           </span>
@@ -251,6 +257,14 @@ function TopRail() {
             Source
             <ArrowSquareOut size={14} />
           </a>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={dark ? "Switch to the light theme" : "Switch to the dark theme"}
+            className="grid size-[34px] place-items-center rounded-lg border border-rule-strong bg-panel text-ink-soft transition-colors hover:border-ink hover:text-ink"
+          >
+            {dark ? <Sun size={16} weight="fill" /> : <Moon size={16} weight="fill" />}
+          </button>
         </div>
       </div>
     </header>
@@ -275,7 +289,7 @@ interface ConsoleProps {
 
 function Console(p: ConsoleProps) {
   return (
-    <div className="mt-5 overflow-hidden rounded-2xl border border-rule-strong bg-panel shadow-[0_1px_2px_rgba(16,24,40,0.04),0_12px_32px_-18px_rgba(16,24,40,0.28)]">
+    <div className="mt-5 overflow-hidden rounded-2xl border border-rule-strong bg-panel shadow-panel">
       <textarea
         value={p.query}
         onChange={(e) => p.onQuery(e.target.value)}
@@ -305,7 +319,7 @@ function Console(p: ConsoleProps) {
                 type="button"
                 onClick={() => p.onMode(m)}
                 className={`rounded-[6px] px-3 py-1.5 text-[13px] capitalize transition-colors ${
-                  p.mode === m ? "bg-ink text-paper" : "text-ink-soft hover:text-ink"
+                  p.mode === m ? "bg-selected text-selected-ink" : "text-ink-soft hover:text-ink"
                 }`}
               >
                 {m}
@@ -317,7 +331,7 @@ function Console(p: ConsoleProps) {
             type="button"
             onClick={p.onRun}
             disabled={p.loading || !p.canRun}
-            className="flex items-center gap-2 rounded-lg bg-ink px-5 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
+            className="flex items-center gap-2 rounded-lg bg-fast px-5 py-2 text-sm font-medium text-paper shadow-accent transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
             {p.loading ? (
               <CircleNotch size={16} weight="bold" className="animate-spin" />
@@ -351,7 +365,7 @@ function Switch({
     >
       <span
         className={`relative h-[18px] w-8 rounded-full transition-colors ${
-          on ? "bg-ink" : "bg-rule-strong"
+          on ? "bg-fast" : "bg-rule-strong"
         }`}
       >
         <span
