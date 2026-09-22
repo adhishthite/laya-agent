@@ -102,3 +102,46 @@ class ComparisonResult(BaseModel):
     latency_diff_ms: float | None = None
     speedup_factor: float | None = None
     total_latency_ms: float = 0.0
+
+
+class StreamStage(str, Enum):
+    """Which step of the pipeline an event describes."""
+
+    SEARCH = "search"
+    LAYA = "laya"
+    JEV = "jev"
+    DELIBERATION = "deliberation"
+    RESULT = "result"
+
+
+class StreamStatus(str, Enum):
+    """Where that step got to."""
+
+    START = "start"
+    DONE = "done"
+    ERROR = "error"
+
+
+class StreamEvent(BaseModel):
+    """One line of a streamed run.
+
+    A full run takes tens of seconds and spends most of it waiting on three
+    different backends. Holding every stage until the last one finishes makes a
+    working run indistinguishable from a hang, so each stage is reported as it
+    happens and the caller renders it immediately.
+
+    Only the payload field that belongs to the stage is populated; the rest are
+    dropped on the wire.
+    """
+
+    stage: StreamStage
+    status: StreamStatus
+    # Measured from the start of the run, not of the stage, so the caller can
+    # place each event on one timeline without doing arithmetic.
+    elapsed_ms: float
+    evidence: list[str] | None = None
+    decision: System1Decision | None = None
+    synthesis: System2Synthesis | None = None
+    decision_result: DecisionResult | None = None
+    comparison: ComparisonResult | None = None
+    error: str | None = None

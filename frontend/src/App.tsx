@@ -1,6 +1,7 @@
 import {
   ArrowSquareOut,
   Brain,
+  CheckCircle,
   Lightning,
   Moon,
   Scales,
@@ -19,13 +20,16 @@ import { Logo } from "./components/Logo";
 import { OutcomeEditor } from "./components/OutcomeEditor";
 import { ProbabilityTrack } from "./components/ProbabilityTrack";
 import { Prose } from "./components/Prose";
-import { outcomesAreValid, runComparison, runDecision, toCriteria } from "./lib/api";
+import { outcomesAreValid, streamComparison, streamDecision, toCriteria } from "./lib/api";
 import { useTheme } from "./lib/theme";
 import type {
   ComparisonResult,
   DecisionResult,
   Outcome,
   Scenario,
+  StreamEvent,
+  StreamStage,
+  StreamStatus,
   System1Decision,
 } from "./lib/types";
 
@@ -75,6 +79,24 @@ const SCENARIOS: Scenario[] = [
 
 type Mode = "decide" | "compare";
 
+/** What the run has reported so far. Rebuilt from the event stream. */
+interface Progress {
+  status: Partial<Record<StreamStage, StreamStatus>>;
+  /** Wall time from the start of the run to the end of each stage. */
+  timing: Partial<Record<StreamStage, number>>;
+  evidence: string[];
+  laya: System1Decision | null;
+  jev: System1Decision | null;
+}
+
+const NO_PROGRESS: Progress = {
+  status: {},
+  timing: {},
+  evidence: [],
+  laya: null,
+  jev: null,
+};
+
 export function App() {
   const [mode, setMode] = useState<Mode>("decide");
   const [query, setQuery] = useState(SCENARIOS[0].query);
@@ -85,6 +107,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
+  const [progress, setProgress] = useState<Progress>(NO_PROGRESS);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const canRun = query.trim() !== "" && outcomesAreValid(outcomes);
@@ -95,6 +118,7 @@ export function App() {
     setError(null);
     setDecision(null);
     setComparison(null);
+    setProgress(NO_PROGRESS);
 
     const opts = {
       query: query.trim(),
@@ -103,11 +127,31 @@ export function App() {
       computeAttribution: attribution,
     };
 
+    // Each event is folded into the previous state rather than replacing it,
+    // because the engines report out of order: whichever finishes first wins.
+    const onEvent = (event: StreamEvent) => {
+      setProgress((prev) => {
+        const next: Progress = {
+          ...prev,
+          status: { ...prev.status, [event.stage]: event.status },
+          timing: { ...prev.timing },
+        };
+        if (event.status !== "start") next.timing[event.stage] = event.elapsed_ms;
+        if (event.evidence) next.evidence = event.evidence;
+        if (event.stage === "laya" && event.decision) next.laya = event.decision;
+        if (event.stage === "jev" && event.decision) next.jev = event.decision;
+        return next;
+      });
+
+      if (event.decision_result) setDecision(event.decision_result);
+      if (event.comparison) setComparison(event.comparison);
+    };
+
     try {
       if (mode === "decide") {
-        setDecision(await runDecision(opts));
+        await streamDecision(opts, onEvent);
       } else {
-        setComparison(await runComparison(opts));
+        await streamComparison(opts, onEvent);
       }
       requestAnimationFrame(() =>
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -185,7 +229,7 @@ export function App() {
           </AnimatePresence>
 
           <div ref={resultsRef} className="scroll-mt-20">
-            {loading && <PendingState mode={mode} />}
+            {loading && !decision && !comparison && <LiveRun mode={mode} progress={progress} />}
             {decision && <DecisionView result={decision} />}
             {comparison && <CompareView result={comparison} />}
             {!decision && !comparison && !loading && <IdleState mode={mode} />}
@@ -196,9 +240,32 @@ export function App() {
   );
 }
 
-function PendingState({ mode }: { mode: Mode }) {
-  // A run takes tens of seconds. Without a moving number the wait is
-  // indistinguishable from a hang, which is exactly the failure this bench hit.
+const STAGE_LABELS: Record<StreamStage, string> = {
+  search: "grounding",
+  laya: "laya",
+  jev: "jev",
+  deliberation: "deliberation",
+  result: "result",
+};
+
+function StageMark({ status }: { status: StreamStatus | undefined }) {
+  if (status === "done") return <CheckCircle size={15} weight="fill" className="text-fast" />;
+  if (status === "error") return <Warning size={15} weight="fill" className="text-alert" />;
+  if (status === "start") return <Arc size={14} cap="round" className="text-ink-soft" />;
+  return <span className="block size-[7px] rounded-full bg-rule-strong" />;
+}
+
+/**
+ * The run as it happens.
+ *
+ * Every stage waits on a different backend and the slow ones dominate, so the
+ * strip reports each one as its event arrives. A panel is replaced by its real
+ * card the moment that engine answers, which is the whole point of the compare
+ * view: one engine finishes long before the other.
+ */
+function LiveRun({ mode, progress }: { mode: Mode; progress: Progress }) {
+  // The stream is silent between events. A moving clock is what separates a
+  // slow stage from a hung one.
   const [elapsedMs, setElapsedMs] = useState(0);
 
   useEffect(() => {
@@ -207,32 +274,109 @@ function PendingState({ mode }: { mode: Mode }) {
     return () => window.clearInterval(id);
   }, []);
 
+  const stages: StreamStage[] =
+    mode === "decide" ? ["search", "laya", "deliberation"] : ["search", "laya", "jev"];
   const columns = mode === "decide" ? "lg:grid-cols-[5fr_7fr]" : "lg:grid-cols-2";
 
   return (
-    <div className={`mt-6 grid items-start gap-5 ${columns}`}>
-      <Panel title={mode === "decide" ? "verdict" : "laya"}>
-        <div className="flex h-[15.5rem] flex-col items-center justify-center gap-5">
-          <Arc size={34} cap="round" className="text-fast" />
-          <p className="tnum text-sm text-ink-faint">{(elapsedMs / 1000).toFixed(1)} s</p>
-        </div>
-      </Panel>
+    <div className="mt-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-4">
+        <ol className="flex flex-wrap items-center gap-x-7 gap-y-2">
+          {stages.map((stage) => {
+            const status = progress.status[stage];
+            const done = progress.timing[stage];
+            return (
+              <li key={stage} className="flex items-center gap-2">
+                <span className="grid size-[15px] place-items-center">
+                  <StageMark status={status} />
+                </span>
+                <span className={`text-[13px] ${status ? "text-ink" : "text-ink-faint"}`}>
+                  {STAGE_LABELS[stage]}
+                </span>
+                {done !== undefined && (
+                  <span className="tnum text-[11px] text-ink-faint">{Math.round(done)} ms</span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <p className="tnum text-sm text-ink-faint">{(elapsedMs / 1000).toFixed(1)} s</p>
+      </div>
 
-      <Panel title={mode === "decide" ? "evidence" : "jev"}>
-        <ul className="h-[15.5rem] divide-y divide-rule">
-          {[0, 1, 2].map((row) => (
-            <li
-              key={row}
-              className="animate-pulse px-7 py-4"
-              style={{ animationDelay: `${row * 140}ms` }}
+      <div className={`grid items-start gap-5 ${columns}`}>
+        {mode === "compare" ? (
+          <>
+            {progress.laya ? (
+              <EngineCard name="Laya" tone="fast" data={progress.laya} />
+            ) : (
+              <WaitingPanel title="laya" />
+            )}
+            {progress.jev ? (
+              <EngineCard name="Jev" tone="slow" data={progress.jev} />
+            ) : (
+              <WaitingPanel title="jev" />
+            )}
+          </>
+        ) : (
+          <>
+            {progress.laya ? (
+              <EngineCard name="Laya" tone="fast" data={progress.laya} />
+            ) : (
+              <WaitingPanel title="verdict" />
+            )}
+            <Panel
+              title="evidence"
+              right={
+                progress.evidence.length > 0 ? (
+                  <span className="tnum text-[11px] text-ink-faint">
+                    {progress.evidence.length} found
+                  </span>
+                ) : undefined
+              }
             >
-              <div className="h-3.5 w-2/3 rounded bg-rule" />
-              <div className="mt-3 h-1.5 w-full rounded-full bg-rule" />
-            </li>
-          ))}
-        </ul>
-      </Panel>
+              {progress.evidence.length > 0 ? (
+                <ul className="divide-y divide-rule">
+                  {progress.evidence.map((item) => (
+                    <li key={item} className="px-7 py-4 text-[13px] leading-relaxed text-ink-soft">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <SkeletonRows />
+              )}
+            </Panel>
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function WaitingPanel({ title }: { title: string }) {
+  return (
+    <Panel title={title}>
+      <div className="flex h-[15.5rem] items-center justify-center">
+        <Arc size={30} cap="round" className="text-fast" />
+      </div>
+    </Panel>
+  );
+}
+
+function SkeletonRows() {
+  return (
+    <ul className="h-[15.5rem] divide-y divide-rule">
+      {[0, 1, 2].map((row) => (
+        <li
+          key={row}
+          className="animate-pulse px-7 py-4"
+          style={{ animationDelay: `${row * 140}ms` }}
+        >
+          <div className="h-3.5 w-2/3 rounded bg-rule" />
+          <div className="mt-3 h-1.5 w-full rounded-full bg-rule" />
+        </li>
+      ))}
+    </ul>
   );
 }
 

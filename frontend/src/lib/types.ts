@@ -9,6 +9,11 @@ export interface LayaProbe {
   detail: string;
 }
 
+/** Which step of the pipeline a streamed event describes. */
+export type StreamStage = "search" | "laya" | "jev" | "deliberation" | "result";
+
+export type StreamStatus = "start" | "done" | "error";
+
 export interface SourceContribution {
   source_text: string;
   impact_points: number;
@@ -56,6 +61,25 @@ export interface ComparisonResult {
   latency_diff_ms: number | null;
   speedup_factor: number | null;
   total_latency_ms: number;
+}
+
+/**
+ * One line of a streamed run.
+ *
+ * Only the payload belonging to `stage` is present; the backend drops the rest
+ * before sending, so every payload field is optional here.
+ */
+export interface StreamEvent {
+  stage: StreamStage;
+  status: StreamStatus;
+  /** Measured from the start of the run, not of the stage. */
+  elapsed_ms: number;
+  evidence?: string[];
+  decision?: System1Decision;
+  synthesis?: System2Synthesis;
+  decision_result?: DecisionResult;
+  comparison?: ComparisonResult;
+  error?: string;
 }
 
 /** One answer the model may return, paired with the condition it stands for. */
