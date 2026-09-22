@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 from laya_agent.agent import DualProcessAgent
 from laya_agent.config import Settings
-from laya_agent.models import ComparisonResult, DecisionResult, QuestionType
+from laya_agent.health import probe_laya
+from laya_agent.models import ComparisonResult, DecisionResult, LayaProbe, QuestionType
 
 app = FastAPI(
     title="Laya Dual-Process Agent API",
@@ -68,6 +69,16 @@ def get_status() -> dict:
         "laya_endpoint": settings.laya_endpoint,
         "jev_configured": bool(settings.typesafe_api_key),
     }
+
+
+@app.get("/api/health/laya", response_model=LayaProbe)
+def get_laya_health() -> LayaProbe:
+    """Check whether Laya can answer right now, and name the link that is broken.
+
+    Always answers 200. The probe result carries the failure, so the caller never
+    has to parse an error to learn that something is down.
+    """
+    return probe_laya()
 
 
 @app.post("/api/decide", response_model=DecisionResult)

@@ -13,6 +13,25 @@ class QuestionType(str, Enum):
     NOUL = "noul"
 
 
+class ProbeState(str, Enum):
+    """Which link in the decision chain the reachability probe reached."""
+
+    READY = "ready"
+    BACKEND_DOWN = "backend_down"
+    AUTH = "auth"
+    ERROR = "error"
+
+
+class LayaProbe(BaseModel):
+    """Result of a live reachability check against the Laya decision backend."""
+
+    state: ProbeState
+    endpoint: str
+    http_status: int | None = None
+    latency_ms: float = 0.0
+    detail: str = ""
+
+
 class SourceContribution(BaseModel):
     """Leave-one-out source contribution analysis."""
 

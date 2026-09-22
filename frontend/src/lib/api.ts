@@ -1,4 +1,4 @@
-import type { ComparisonResult, DecisionResult, Outcome } from "./types";
+import type { ComparisonResult, DecisionResult, LayaProbe, Outcome } from "./types";
 
 export interface RunOptions {
   query: string;
@@ -41,6 +41,18 @@ export function runComparison(opts: RunOptions): Promise<ComparisonResult> {
     enable_search: opts.enableSearch,
     compute_attribution: opts.computeAttribution,
   });
+}
+
+/**
+ * Ask the backend whether Laya can answer right now.
+ *
+ * The probe endpoint reports failures inside a 200 body, so a rejection from
+ * here means our own backend is unreachable, not the GPU.
+ */
+export async function probeLaya(): Promise<LayaProbe> {
+  const res = await fetch("/api/health/laya");
+  if (!res.ok) throw new Error(`The bench backend answered ${res.status}.`);
+  return (await res.json()) as LayaProbe;
 }
 
 /** Serialise outcomes into the criteria map the API expects. */

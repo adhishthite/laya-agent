@@ -1,3 +1,14 @@
+/** Which link in the decision chain the reachability probe reached. */
+export type ProbeState = "ready" | "backend_down" | "auth" | "error";
+
+export interface LayaProbe {
+  state: ProbeState;
+  endpoint: string;
+  http_status: number | null;
+  latency_ms: number;
+  detail: string;
+}
+
 export interface SourceContribution {
   source_text: string;
   impact_points: number;

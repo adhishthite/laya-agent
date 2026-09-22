@@ -35,8 +35,16 @@ class Settings(BaseModel):
             "LAYA_ENDPOINT", "https://laya-system1-proxy-xyz123-uc.a.run.app/predict"
         )
     )
+    # Must exceed the proxy's own upstream deadline (~30 s). Matching it means we
+    # abandon a fraction of a second early and replace its 502 with a bare socket
+    # timeout, which says nothing about what broke.
     laya_timeout_seconds: float = Field(
-        default_factory=lambda: float(os.getenv("LAYA_TIMEOUT_SECONDS", "30.0"))
+        default_factory=lambda: float(os.getenv("LAYA_TIMEOUT_SECONDS", "45.0"))
+    )
+    # The header probe must fail fast. A warm Laya answers in well under a second;
+    # the headroom covers a Cloud Run cold start at min-instances 0.
+    laya_probe_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("LAYA_PROBE_TIMEOUT_SECONDS", "8.0"))
     )
 
     # TypeSafe Jev configuration

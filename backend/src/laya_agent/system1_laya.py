@@ -102,18 +102,28 @@ class System1LayaClient:
             "Content-Type": "application/json",
         }
 
-        with httpx.Client(timeout=self.settings.laya_timeout_seconds) as client:
-            response = client.post(self.settings.laya_endpoint, headers=headers, json=payload)
-            if response.status_code != 200:
-                raise RuntimeError(
-                    summarise_http_error(
-                        "Laya proxy",
-                        self.settings.laya_endpoint,
-                        response.status_code,
-                        response.text,
-                    )
+        try:
+            with httpx.Client(timeout=self.settings.laya_timeout_seconds) as client:
+                response = client.post(self.settings.laya_endpoint, headers=headers, json=payload)
+        except httpx.TimeoutException as exc:
+            # A timeout is an exception, not a response, so it never reaches
+            # summarise_http_error. Without this the UI shows a bare socket message.
+            raise RuntimeError(
+                f"Laya proxy did not answer within {self.settings.laya_timeout_seconds:.0f} s. "
+                "The GPU backend is probably stopped. A stopped VM drops packets instead of "
+                "refusing them, so the call hangs. Check the backend status in the header."
+            ) from exc
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                summarise_http_error(
+                    "Laya proxy",
+                    self.settings.laya_endpoint,
+                    response.status_code,
+                    response.text,
                 )
-            return response.json()
+            )
+        return response.json()
 
     def _compute_leave_one_out(
         self,

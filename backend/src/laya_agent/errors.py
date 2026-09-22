@@ -32,5 +32,7 @@ _HINTS = {
     403: "The caller identity is not allowed to invoke this endpoint.",
     404: "That endpoint does not exist. Check the configured URL and its path.",
     429: "The endpoint is rate limited. Retry later.",
+    502: "The proxy could not reach its upstream. The GPU backend is probably stopped.",
     503: "The endpoint is unavailable. The backing instance may be cold or stopped.",
+    504: "The proxy gave up waiting for its upstream. The GPU backend is probably stopped.",
 }

@@ -11,7 +11,9 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
+import { BackendStatus } from "./components/BackendStatus";
 import { EvidenceLedger } from "./components/EvidenceLedger";
+
 import { Logo } from "./components/Logo";
 import { OutcomeEditor } from "./components/OutcomeEditor";
 import { ProbabilityTrack } from "./components/ProbabilityTrack";
@@ -245,9 +247,7 @@ function TopRail() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="tnum hidden text-xs text-ink-faint sm:inline">
-            laya + gemini-3.5-flash-lite
-          </span>
+          <BackendStatus />
           <a
             href="https://github.com/adhishthite/laya-agent"
             target="_blank"
@@ -257,6 +257,7 @@ function TopRail() {
             Source
             <ArrowSquareOut size={14} />
           </a>
+
           <button
             type="button"
             onClick={toggleTheme}
