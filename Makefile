@@ -1,21 +1,25 @@
 .PHONY: start dev test format lint clean check
 
 start:
-	uv run laya-agent --help
+	bun run concurrently -n backend,frontend -c green,cyan "make -C backend start" "make -C frontend start"
 
 dev:
-	uv run laya-agent --interactive
+	bun run concurrently -n backend,frontend -c green,cyan "make -C backend dev" "make -C frontend dev"
 
 test:
-	uv run pytest -v
+	make -C backend test
+	make -C frontend test
 
 format:
-	uv run ruff format .
+	make -C backend format
+	make -C frontend format
 
 lint:
-	uv run ruff check .
+	make -C backend lint
+	make -C frontend lint
 
 clean:
-	rm -rf .pytest_cache .ruff_cache build dist *.egg-info __pycache__ src/**/__pycache__ tests/__pycache__
+	make -C backend clean
+	make -C frontend clean
 
 check: format lint test

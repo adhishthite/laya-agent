@@ -3,6 +3,11 @@
 env/
 venv/
 
+# Node / JavaScript
+node_modules/
+dist/
+.vite/
+
 # Byte-code / compiled
 __pycache__/
 *.py[cod]
