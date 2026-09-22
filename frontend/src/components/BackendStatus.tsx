@@ -1,4 +1,5 @@
-import { ArrowClockwise, CircleNotch } from "@phosphor-icons/react";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import { Arc } from "loading-dev";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { probeLaya } from "../lib/api";
@@ -95,10 +96,11 @@ export function BackendStatus() {
         className="flex items-center gap-2 rounded-lg border border-rule-strong bg-panel px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:border-ink hover:text-ink"
       >
         {checking ? (
-          <CircleNotch size={13} weight="bold" className="animate-spin text-ink-faint" />
+          <Arc size={12} cap="round" className="text-ink-faint" />
         ) : (
           <span className={`size-2 rounded-full ${probe ? DOT[probe.state] : "bg-ink-faint"}`} />
         )}
+
         {label}
       </button>
 

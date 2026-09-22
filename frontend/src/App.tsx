@@ -1,16 +1,17 @@
 import {
   ArrowSquareOut,
   Brain,
-  CircleNotch,
   Lightning,
   Moon,
   Scales,
   Sun,
   Warning,
 } from "@phosphor-icons/react";
+import { Arc } from "loading-dev";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
 import { BackendStatus } from "./components/BackendStatus";
 import { EvidenceLedger } from "./components/EvidenceLedger";
 
@@ -196,11 +197,41 @@ export function App() {
 }
 
 function PendingState({ mode }: { mode: Mode }) {
+  // A run takes tens of seconds. Without a moving number the wait is
+  // indistinguishable from a hang, which is exactly the failure this bench hit.
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    const startedAt = performance.now();
+    const id = window.setInterval(() => setElapsedMs(performance.now() - startedAt), 100);
+    return () => window.clearInterval(id);
+  }, []);
+
   const columns = mode === "decide" ? "lg:grid-cols-[5fr_7fr]" : "lg:grid-cols-2";
+
   return (
-    <div className={`mt-6 grid animate-pulse gap-5 ${columns}`}>
-      <div className="h-64 rounded-2xl border border-rule-strong bg-panel" />
-      <div className="h-64 rounded-2xl border border-rule-strong bg-panel" />
+    <div className={`mt-6 grid items-start gap-5 ${columns}`}>
+      <Panel title={mode === "decide" ? "verdict" : "laya"}>
+        <div className="flex h-[15.5rem] flex-col items-center justify-center gap-5">
+          <Arc size={34} cap="round" className="text-fast" />
+          <p className="tnum text-sm text-ink-faint">{(elapsedMs / 1000).toFixed(1)} s</p>
+        </div>
+      </Panel>
+
+      <Panel title={mode === "decide" ? "evidence" : "jev"}>
+        <ul className="h-[15.5rem] divide-y divide-rule">
+          {[0, 1, 2].map((row) => (
+            <li
+              key={row}
+              className="animate-pulse px-7 py-4"
+              style={{ animationDelay: `${row * 140}ms` }}
+            >
+              <div className="h-3.5 w-2/3 rounded bg-rule" />
+              <div className="mt-3 h-1.5 w-full rounded-full bg-rule" />
+            </li>
+          ))}
+        </ul>
+      </Panel>
     </div>
   );
 }
@@ -334,11 +365,8 @@ function Console(p: ConsoleProps) {
             disabled={p.loading || !p.canRun}
             className="flex items-center gap-2 rounded-lg bg-fast px-5 py-2 text-sm font-medium text-paper shadow-accent transition-opacity hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
           >
-            {p.loading ? (
-              <CircleNotch size={16} weight="bold" className="animate-spin" />
-            ) : (
-              <Lightning size={16} weight="fill" />
-            )}
+            {p.loading ? <Arc size={15} cap="round" /> : <Lightning size={16} weight="fill" />}
+
             {p.loading ? "Running" : "Run"}
           </button>
         </div>
