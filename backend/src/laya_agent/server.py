@@ -49,8 +49,6 @@ class DecideRequest(BaseModel):
     question_type: str = "choice"
     enable_search: bool = True
     compute_attribution: bool = True
-    confidence_threshold: float = 0.60
-    force_system2: bool = False
 
 
 class CompareRequest(BaseModel):
@@ -94,10 +92,9 @@ def get_laya_health() -> LayaProbe:
 
 @app.post("/api/decide", response_model=DecisionResult)
 def decide(req: DecideRequest) -> DecisionResult:
-    """Execute a dual-process decision."""
+    """Execute a Laya-only System 1 decision."""
     try:
-        settings = Settings(confidence_threshold=req.confidence_threshold)
-        agent = DualProcessAgent(settings=settings)
+        agent = DualProcessAgent()
         q_type = (
             QuestionType.CHOICE if req.question_type.lower() == "choice" else QuestionType.SCORE
         )
@@ -107,7 +104,6 @@ def decide(req: DecideRequest) -> DecisionResult:
             question_type=q_type,
             enable_search=req.enable_search,
             compute_attribution=req.compute_attribution,
-            force_system2=req.force_system2,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -168,9 +164,8 @@ def _stream(events: Iterator[StreamEvent]) -> StreamingResponse:
 
 @app.post("/api/decide/stream")
 def decide_stream(req: DecideRequest) -> StreamingResponse:
-    """Execute a dual-process decision, reporting each stage as it finishes."""
-    settings = Settings(confidence_threshold=req.confidence_threshold)
-    agent = DualProcessAgent(settings=settings)
+    """Execute a Laya System 1 decision, reporting each stage as it finishes."""
+    agent = DualProcessAgent()
     q_type = QuestionType.CHOICE if req.question_type.lower() == "choice" else QuestionType.SCORE
     return _stream(
         agent.decide_stream(
@@ -179,7 +174,6 @@ def decide_stream(req: DecideRequest) -> StreamingResponse:
             question_type=q_type,
             enable_search=req.enable_search,
             compute_attribution=req.compute_attribution,
-            force_system2=req.force_system2,
         )
     )
 

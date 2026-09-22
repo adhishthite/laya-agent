@@ -1,6 +1,5 @@
 import {
   ArrowSquareOut,
-  Brain,
   CheckCircle,
   Lightning,
   Moon,
@@ -9,17 +8,15 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { Arc } from "loading-dev";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { BackendStatus } from "./components/BackendStatus";
 import { EvidenceLedger } from "./components/EvidenceLedger";
-
 import { Logo } from "./components/Logo";
 import { OutcomeEditor } from "./components/OutcomeEditor";
 import { ProbabilityTrack } from "./components/ProbabilityTrack";
-import { Prose } from "./components/Prose";
 import { outcomesAreValid, streamComparison, streamDecision, toCriteria } from "./lib/api";
 import { useTheme } from "./lib/theme";
 import type {
@@ -44,10 +41,10 @@ const SCENARIOS: Scenario[] = [
   },
   {
     label: "Starship booster catch",
-    query: "Did SpaceX catch the Super Heavy booster on the launch tower?",
+    query: "Did SpaceX catch the Super Heavy booster on the launch tower arms?",
     outcomes: [
-      { key: "yes", description: "Caught by the tower" },
-      { key: "no", description: "Lost or ocean splashdown" },
+      { key: "yes", description: "Caught by Mechazilla" },
+      { key: "no", description: "Splashdown or abort" },
     ],
   },
   {
@@ -60,9 +57,9 @@ const SCENARIOS: Scenario[] = [
   },
   {
     label: "Fed rate cut",
-    query: "Did the Federal Reserve cut interest rates at its latest FOMC meeting?",
+    query: "Did the Federal Reserve cut interest rates at its most recent FOMC meeting?",
     outcomes: [
-      { key: "yes", description: "Cut rates" },
+      { key: "yes", description: "Rate cut announced" },
       { key: "no", description: "Held or raised" },
     ],
   },
@@ -77,13 +74,13 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
-type Mode = "decide" | "compare";
+type Mode = "both" | "laya";
 
 /** What the run has reported so far. Rebuilt from the event stream. */
 interface Progress {
   status: Partial<Record<StreamStage, StreamStatus>>;
-  /** Wall time from the start of the run to the end of each stage. */
-  timing: Partial<Record<StreamStage, number>>;
+  /** Pure duration of each stage (web search time or single-pass model latency). */
+  stageLatencyMs: Partial<Record<StreamStage, number>>;
   evidence: string[];
   laya: System1Decision | null;
   jev: System1Decision | null;
@@ -91,14 +88,14 @@ interface Progress {
 
 const NO_PROGRESS: Progress = {
   status: {},
-  timing: {},
+  stageLatencyMs: {},
   evidence: [],
   laya: null,
   jev: null,
 };
 
 export function App() {
-  const [mode, setMode] = useState<Mode>("decide");
+  const [mode, setMode] = useState<Mode>("both");
   const [query, setQuery] = useState(SCENARIOS[0].query);
   const [outcomes, setOutcomes] = useState<Outcome[]>(SCENARIOS[0].outcomes);
   const [grounding, setGrounding] = useState(true);
@@ -108,7 +105,8 @@ export function App() {
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [progress, setProgress] = useState<Progress>(NO_PROGRESS);
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const [runMode, setRunMode] = useState<Mode>("both");
+  const [runGrounding, setRunGrounding] = useState(true);
 
   const canRun = query.trim() !== "" && outcomesAreValid(outcomes);
 
@@ -119,6 +117,8 @@ export function App() {
     setDecision(null);
     setComparison(null);
     setProgress(NO_PROGRESS);
+    setRunMode(mode);
+    setRunGrounding(grounding);
 
     const opts = {
       query: query.trim(),
@@ -127,16 +127,18 @@ export function App() {
       computeAttribution: attribution,
     };
 
-    // Each event is folded into the previous state rather than replacing it,
-    // because the engines report out of order: whichever finishes first wins.
     const onEvent = (event: StreamEvent) => {
       setProgress((prev) => {
         const next: Progress = {
           ...prev,
           status: { ...prev.status, [event.stage]: event.status },
-          timing: { ...prev.timing },
+          stageLatencyMs: { ...prev.stageLatencyMs },
         };
-        if (event.status !== "start") next.timing[event.stage] = event.elapsed_ms;
+        if (event.latency_ms !== undefined) {
+          next.stageLatencyMs[event.stage] = event.latency_ms;
+        } else if (event.decision) {
+          next.stageLatencyMs[event.stage] = event.decision.latency_ms;
+        }
         if (event.evidence) next.evidence = event.evidence;
         if (event.stage === "laya" && event.decision) next.laya = event.decision;
         if (event.stage === "jev" && event.decision) next.jev = event.decision;
@@ -148,20 +150,24 @@ export function App() {
     };
 
     try {
-      if (mode === "decide") {
+      if (mode === "laya") {
         await streamDecision(opts, onEvent);
       } else {
         await streamComparison(opts, onEvent);
       }
-      requestAnimationFrame(() =>
-        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "The bench could not reach the backend.");
     } finally {
       setLoading(false);
     }
   }
+
+  const hasWorkspace =
+    loading ||
+    decision !== null ||
+    comparison !== null ||
+    progress.laya !== null ||
+    progress.jev !== null;
 
   return (
     <div className="min-h-[100dvh] bg-paper">
@@ -170,9 +176,9 @@ export function App() {
       <main className="bench-grid">
         <div className="mx-auto w-full max-w-6xl px-6 pb-24 pt-14 sm:pt-20">
           <h1 className="max-w-5xl font-display text-[2.4rem] font-semibold leading-[1.06] tracking-[-0.035em] text-ink sm:text-[3.15rem]">
-            Fast answers by default.
+            System 1 head-to-head.
             <br />
-            <span className="text-ink-soft">Slow reasoning only when it matters.</span>
+            <span className="text-ink-soft">Laya vs Jev, grounded or raw.</span>
           </h1>
 
           <div className="mt-10 flex flex-wrap gap-2">
@@ -228,11 +234,19 @@ export function App() {
             )}
           </AnimatePresence>
 
-          <div ref={resultsRef} className="scroll-mt-20">
-            {loading && !decision && !comparison && <LiveRun mode={mode} progress={progress} />}
-            {decision && <DecisionView result={decision} />}
-            {comparison && <CompareView result={comparison} />}
-            {!decision && !comparison && !loading && <IdleState mode={mode} />}
+          <div>
+            {hasWorkspace ? (
+              <BenchWorkspace
+                mode={runMode}
+                searchEnabled={runGrounding}
+                loading={loading}
+                progress={progress}
+                decision={decision}
+                comparison={comparison}
+              />
+            ) : (
+              <IdleState mode={mode} />
+            )}
           </div>
         </div>
       </main>
@@ -240,124 +254,280 @@ export function App() {
   );
 }
 
-const STAGE_LABELS: Record<StreamStage, string> = {
-  search: "grounding",
-  laya: "laya",
-  jev: "jev",
-  deliberation: "deliberation",
-  result: "result",
-};
-
-function StageMark({ status }: { status: StreamStatus | undefined }) {
-  if (status === "done") return <CheckCircle size={15} weight="fill" className="text-fast" />;
-  if (status === "error") return <Warning size={15} weight="fill" className="text-alert" />;
-  if (status === "start") return <Arc size={14} cap="round" className="text-ink-soft" />;
-  return <span className="block size-[7px] rounded-full bg-rule-strong" />;
-}
-
 /**
- * The run as it happens.
+ * One persistent workspace that stays mounted across the entire lifecycle of a
+ * run (streaming -> complete).
  *
- * Every stage waits on a different backend and the slow ones dominate, so the
- * strip reports each one as its event arrives. A panel is replaced by its real
- * card the moment that engine answers, which is the whole point of the compare
- * view: one engine finishes long before the other.
+ * Keeping the exact same tree and React keys prevents the results section from
+ * unmounting and re-animating when the stream finishes.
  */
-function LiveRun({ mode, progress }: { mode: Mode; progress: Progress }) {
-  // The stream is silent between events. A moving clock is what separates a
-  // slow stage from a hung one.
+function BenchWorkspace({
+  mode,
+  searchEnabled,
+  loading,
+  progress,
+  decision,
+  comparison,
+}: {
+  mode: Mode;
+  searchEnabled: boolean;
+  loading: boolean;
+  progress: Progress;
+  decision: DecisionResult | null;
+  comparison: ComparisonResult | null;
+}) {
   const [elapsedMs, setElapsedMs] = useState(0);
 
   useEffect(() => {
+    if (!loading) return;
+    setElapsedMs(0);
     const startedAt = performance.now();
     const id = window.setInterval(() => setElapsedMs(performance.now() - startedAt), 100);
     return () => window.clearInterval(id);
-  }, []);
+  }, [loading]);
 
-  const stages: StreamStage[] =
-    mode === "decide" ? ["search", "laya", "deliberation"] : ["search", "laya", "jev"];
-  const columns = mode === "decide" ? "lg:grid-cols-[5fr_7fr]" : "lg:grid-cols-2";
+  const searchMs =
+    comparison?.search_latency_ms ?? decision?.search_latency_ms ?? progress.stageLatencyMs.search;
+
+  const layaData: System1Decision | null =
+    comparison?.laya ??
+    progress.laya ??
+    (decision
+      ? {
+          choice: decision.decision,
+          probabilities: decision.probabilities,
+          confidence: decision.confidence,
+          latency_ms: decision.laya_latency_ms,
+          sources: decision.sources,
+          error: decision.system1_error,
+        }
+      : null);
+
+  const jevData: System1Decision | null = comparison?.jev ?? progress.jev;
+
+  const evidence = comparison?.evidence ?? decision?.evidence ?? progress.evidence;
+
+  const searchValue = !searchEnabled
+    ? "off"
+    : searchMs !== undefined
+      ? `${Math.round(searchMs)} ms`
+      : progress.status.search === "start"
+        ? "..."
+        : "—";
+
+  const layaLatencyValue =
+    layaData && !layaData.error
+      ? `${Math.round(layaData.latency_ms)} ms`
+      : progress.status.laya === "start"
+        ? "..."
+        : "—";
+
+  const jevLatencyValue =
+    jevData && !jevData.error
+      ? `${Math.round(jevData.latency_ms)} ms`
+      : progress.status.jev === "start"
+        ? "..."
+        : "—";
+
+  if (mode === "laya") {
+    const layaFailed = Boolean(layaData?.error);
+    return (
+      <div className="mt-6 flex flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-5">
+          <div className="flex items-center gap-3">
+            {loading ? (
+              <Arc size={20} cap="round" className="text-fast" />
+            ) : layaFailed ? (
+              <Warning size={22} weight="fill" className="text-alert" />
+            ) : (
+              <CheckCircle size={22} weight="fill" className="text-fast" />
+            )}
+            <p className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
+              {loading
+                ? progress.status.search === "start"
+                  ? "Searching the web..."
+                  : "Running Laya on GPU..."
+                : layaFailed
+                  ? "Laya did not answer"
+                  : `Laya chose ${layaData?.choice ?? "n/a"}`}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-8">
+            <Stat label="web search" value={searchValue} />
+            <Stat label="laya (pure)" value={layaLatencyValue} tone="text-fast" />
+            <Stat
+              label="elapsed"
+              value={
+                decision
+                  ? `${Math.round(decision.total_latency_ms)} ms`
+                  : `${(elapsedMs / 1000).toFixed(1)} s`
+              }
+            />
+          </div>
+        </div>
+
+        <div className="grid items-start gap-5 lg:grid-cols-[5fr_7fr]">
+          {layaData ? (
+            <EngineCard
+              key="laya-only"
+              name="Laya"
+              tone="fast"
+              data={layaData}
+              searchEnabled={searchEnabled}
+              searchLatencyMs={searchMs}
+              showEvidence={false}
+            />
+          ) : (
+            <WaitingPanel
+              title="laya"
+              subtitle={
+                progress.status.search === "start"
+                  ? "Waiting for web grounding..."
+                  : "Computing on L4 GPU..."
+              }
+            />
+          )}
+
+          <Panel
+            title="evidence"
+            right={
+              layaData && layaData.sources.length > 0 ? (
+                <span className="tnum text-[11px] text-ink-faint">
+                  {layaData.sources.length} weighted
+                </span>
+              ) : evidence.length > 0 ? (
+                <span className="tnum text-[11px] text-ink-faint">{evidence.length} found</span>
+              ) : undefined
+            }
+          >
+            {!searchEnabled || evidence.length > 0 || !loading ? (
+              <EvidenceLedger
+                sources={layaData?.sources ?? []}
+                evidence={evidence}
+                searchEnabled={searchEnabled}
+              />
+            ) : (
+              <SkeletonRows />
+            )}
+          </Panel>
+        </div>
+      </div>
+    );
+  }
+
+  // mode === "both" (head-to-head Laya vs Jev)
+  const bothPresent = Boolean(layaData && jevData);
+  const bothHealthy = Boolean(layaData && jevData && !layaData.error && !jevData.error);
+  const agreement =
+    comparison?.agreement ?? (bothHealthy ? layaData?.choice === jevData?.choice : null);
+  const faster =
+    bothHealthy && layaData && jevData
+      ? layaData.latency_ms <= jevData.latency_ms
+        ? "Laya"
+        : "Jev"
+      : "—";
+  const speedup =
+    comparison?.speedup_factor ??
+    (bothHealthy && layaData && jevData
+      ? Number((jevData.latency_ms / Math.max(layaData.latency_ms, 0.001)).toFixed(2))
+      : null);
+  const gapMs =
+    comparison?.latency_diff_ms ??
+    (bothHealthy && layaData && jevData ? jevData.latency_ms - layaData.latency_ms : null);
+  const downEngines = [layaData?.error ? "Laya" : null, jevData?.error ? "Jev" : null].filter(
+    Boolean,
+  );
 
   return (
     <div className="mt-6 flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-4">
-        <ol className="flex flex-wrap items-center gap-x-7 gap-y-2">
-          {stages.map((stage) => {
-            const status = progress.status[stage];
-            const done = progress.timing[stage];
-            return (
-              <li key={stage} className="flex items-center gap-2">
-                <span className="grid size-[15px] place-items-center">
-                  <StageMark status={status} />
-                </span>
-                <span className={`text-[13px] ${status ? "text-ink" : "text-ink-faint"}`}>
-                  {STAGE_LABELS[stage]}
-                </span>
-                {done !== undefined && (
-                  <span className="tnum text-[11px] text-ink-faint">{Math.round(done)} ms</span>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-        <p className="tnum text-sm text-ink-faint">{(elapsedMs / 1000).toFixed(1)} s</p>
+      <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-5">
+        <div className="flex items-center gap-3">
+          {!bothPresent && loading ? (
+            <Arc size={20} cap="round" className="text-fast" />
+          ) : agreement !== null ? (
+            <Scales size={22} weight="fill" className={agreement ? "text-fast" : "text-alert"} />
+          ) : (
+            <Warning size={22} weight="fill" className="text-alert" />
+          )}
+          <p className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
+            {!bothPresent && loading
+              ? progress.status.search === "start"
+                ? "Searching the web..."
+                : layaData && !jevData
+                  ? "Laya finished — waiting on Jev..."
+                  : jevData && !layaData
+                    ? "Jev finished — waiting on Laya..."
+                    : "Running Laya & Jev in parallel..."
+              : agreement !== null
+                ? agreement
+                  ? "Both models agree"
+                  : "The models disagree"
+                : `${downEngines.join(" and ") || "Engine"} did not answer`}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-7">
+          <Stat label="web search" value={searchValue} />
+          <Stat label="laya (pure)" value={layaLatencyValue} tone="text-fast" />
+          <Stat label="jev (pure)" value={jevLatencyValue} tone="text-slow" />
+          <Stat label="faster" value={faster} />
+          <Stat label="speedup" value={speedup === null ? "—" : `${speedup.toFixed(2)}x`} />
+          <Stat label="gap" value={gapMs === null ? "—" : `${Math.round(Math.abs(gapMs))} ms`} />
+        </div>
       </div>
 
-      <div className={`grid items-start gap-5 ${columns}`}>
-        {mode === "compare" ? (
-          <>
-            {progress.laya ? (
-              <EngineCard name="Laya" tone="fast" data={progress.laya} />
-            ) : (
-              <WaitingPanel title="laya" />
-            )}
-            {progress.jev ? (
-              <EngineCard name="Jev" tone="slow" data={progress.jev} />
-            ) : (
-              <WaitingPanel title="jev" />
-            )}
-          </>
+      <div className="grid gap-5 lg:grid-cols-2">
+        {layaData ? (
+          <EngineCard
+            key="laya"
+            name="Laya"
+            tone="fast"
+            data={layaData}
+            searchEnabled={searchEnabled}
+            searchLatencyMs={searchMs}
+          />
         ) : (
-          <>
-            {progress.laya ? (
-              <EngineCard name="Laya" tone="fast" data={progress.laya} />
-            ) : (
-              <WaitingPanel title="verdict" />
-            )}
-            <Panel
-              title="evidence"
-              right={
-                progress.evidence.length > 0 ? (
-                  <span className="tnum text-[11px] text-ink-faint">
-                    {progress.evidence.length} found
-                  </span>
-                ) : undefined
-              }
-            >
-              {progress.evidence.length > 0 ? (
-                <ul className="divide-y divide-rule">
-                  {progress.evidence.map((item) => (
-                    <li key={item} className="px-7 py-4 text-[13px] leading-relaxed text-ink-soft">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <SkeletonRows />
-              )}
-            </Panel>
-          </>
+          <WaitingPanel
+            title="laya"
+            subtitle={
+              progress.status.search === "start"
+                ? "Waiting for web grounding..."
+                : "Computing on L4 GPU..."
+            }
+          />
+        )}
+
+        {jevData ? (
+          <EngineCard
+            key="jev"
+            name="Jev"
+            tone="slow"
+            data={jevData}
+            searchEnabled={searchEnabled}
+            searchLatencyMs={searchMs}
+          />
+        ) : (
+          <WaitingPanel
+            title="jev"
+            subtitle={
+              progress.status.search === "start"
+                ? "Waiting for web grounding..."
+                : "Querying TypeSafe API..."
+            }
+          />
         )}
       </div>
     </div>
   );
 }
 
-function WaitingPanel({ title }: { title: string }) {
+function WaitingPanel({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <Panel title={title}>
-      <div className="flex h-[15.5rem] items-center justify-center">
+      <div className="flex h-[15.5rem] flex-col items-center justify-center gap-3.5">
         <Arc size={30} cap="round" className="text-fast" />
+        {subtitle && <p className="font-mono text-xs text-ink-faint">{subtitle}</p>}
       </div>
     </Panel>
   );
@@ -382,16 +552,16 @@ function SkeletonRows() {
 
 function IdleState({ mode }: { mode: Mode }) {
   const steps =
-    mode === "decide"
+    mode === "both"
       ? [
-          "Gemini grounds the question in live web results.",
-          "Laya reads that evidence and returns a calibrated answer.",
-          "Below the confidence floor, Gemini takes the question back and reasons it through.",
+          "Toggle Web grounding on to pull live citations first, or off to test raw priors.",
+          "Laya (L4 GPU) and Jev (SaaS) evaluate the exact same evidence in parallel.",
+          "Each card streams in the instant its model finishes, with pure engine vs search latency.",
         ]
       : [
-          "Gemini grounds the question in live web results.",
-          "Laya and Jev read the same evidence at the same time.",
-          "The bench reports where they agree and which one got there first.",
+          "Toggle Web grounding on to pull live citations first, or off to test raw priors.",
+          "Laya evaluates the evidence on the private L4 GPU endpoint.",
+          "Leave-one-out attribution measures how many points each source shifts the verdict.",
         ];
 
   return (
@@ -463,6 +633,11 @@ interface ConsoleProps {
   onRun: () => void;
 }
 
+const MODE_LABELS: Record<Mode, string> = {
+  both: "Both",
+  laya: "Laya only",
+};
+
 function Console(p: ConsoleProps) {
   return (
     <div className="mt-5 overflow-hidden rounded-2xl border border-rule-strong bg-panel shadow-panel">
@@ -489,16 +664,16 @@ function Console(p: ConsoleProps) {
 
         <div className="flex items-center gap-3">
           <div className="flex rounded-lg border border-rule-strong bg-panel p-0.5">
-            {(["decide", "compare"] as const).map((m) => (
+            {(["both", "laya"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={() => p.onMode(m)}
-                className={`rounded-[6px] px-3 py-1.5 text-[13px] capitalize transition-colors ${
+                className={`rounded-[6px] px-3 py-1.5 text-[13px] transition-colors ${
                   p.mode === m ? "bg-selected text-selected-ink" : "text-ink-soft hover:text-ink"
                 }`}
               >
-                {m}
+                {MODE_LABELS[m]}
               </button>
             ))}
           </div>
@@ -585,190 +760,24 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
   );
 }
 
-function DecisionView({ result }: { result: DecisionResult }) {
-  const reduced = useReducedMotion();
-  const escalated = result.handled_by.startsWith("System 2");
-  const tone = escalated ? "slow" : "fast";
-  // Laya runs on a preemptible GPU VM. When it is gone, Gemini answers alone
-  // and the verdict panel reports that instead of a decision it never made.
-  const fastLaneDown = Boolean(result.system1_error);
-
-  return (
-    <motion.div
-      // The results block arrives after a wait; a short rise marks it as new.
-      initial={reduced ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="mt-6 flex flex-col gap-5"
-    >
-      <div className="grid items-start gap-5 lg:grid-cols-[5fr_7fr]">
-        <Panel
-          title="verdict"
-          right={
-            <span
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                fastLaneDown
-                  ? "bg-alert-weak text-alert"
-                  : escalated
-                    ? "bg-slow-weak text-slow"
-                    : "bg-fast-weak text-fast"
-              }`}
-            >
-              {fastLaneDown ? (
-                <Warning size={13} weight="fill" />
-              ) : escalated ? (
-                <Brain size={13} weight="fill" />
-              ) : (
-                <Lightning size={13} weight="fill" />
-              )}
-              {fastLaneDown ? "System 2 only" : escalated ? "System 2" : "System 1"}
-            </span>
-          }
-        >
-          {fastLaneDown ? (
-            <div className="flex items-start gap-3 px-7 py-6">
-              <Warning size={20} weight="fill" className="mt-0.5 shrink-0 text-alert" />
-              <p className="text-sm leading-relaxed text-ink-soft">{result.system1_error}</p>
-            </div>
-          ) : (
-            <div className="px-7 py-6">
-              <p
-                className={`font-display text-5xl font-semibold tracking-[-0.03em] ${
-                  escalated ? "text-slow" : "text-fast"
-                }`}
-              >
-                {result.decision}
-              </p>
-              <div className="mt-6">
-                <ProbabilityTrack
-                  probabilities={result.probabilities}
-                  winner={result.decision}
-                  tone={tone}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-3 gap-4 border-t border-rule bg-sunken px-7 py-4">
-            <Stat label="confidence" value={fastLaneDown ? "—" : result.confidence.toFixed(4)} />
-            <Stat label="latency" value={`${Math.round(result.total_latency_ms)} ms`} />
-            <Stat
-              label="route"
-              value={fastLaneDown ? "degraded" : escalated ? "escalated" : "direct"}
-            />
-          </div>
-        </Panel>
-
-        <Panel
-          title="evidence"
-          right={
-            result.sources.length > 0 ? (
-              <span className="tnum text-[11px] text-ink-faint">
-                {result.sources.length} weighted
-              </span>
-            ) : undefined
-          }
-        >
-          <EvidenceLedger
-            sources={result.sources}
-            evidence={result.evidence}
-            searchEnabled={result.search_enabled}
-          />
-        </Panel>
-      </div>
-
-      {result.system2_synthesis && (
-        <Panel
-          title="deliberation"
-          right={
-            <span className="tnum text-[11px] text-ink-faint">
-              {Math.round(result.system2_synthesis.latency_ms)} ms
-            </span>
-          }
-        >
-          <div className="px-7 py-6">
-            <Prose>{result.system2_synthesis.explanation}</Prose>
-          </div>
-        </Panel>
-      )}
-    </motion.div>
-  );
-}
-function CompareView({ result }: { result: ComparisonResult }) {
-  const reduced = useReducedMotion();
-  // Only one lane may have answered. Everything that needs both is withheld
-  // rather than shown as a zero, which would read as a real measurement.
-  const bothAnswered = result.agreement !== null;
-  const downEngines = [result.laya.error ? "Laya" : null, result.jev.error ? "Jev" : null].filter(
-    Boolean,
-  );
-  const faster = result.laya.latency_ms <= result.jev.latency_ms ? "Laya" : "Jev";
-
-  return (
-    <motion.div
-      initial={reduced ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="mt-6 flex flex-col gap-5"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-rule-strong bg-panel px-7 py-5">
-        <div className="flex items-center gap-3">
-          {bothAnswered ? (
-            <Scales
-              size={22}
-              weight="fill"
-              className={result.agreement ? "text-fast" : "text-alert"}
-            />
-          ) : (
-            <Warning size={22} weight="fill" className="text-alert" />
-          )}
-          <p className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
-            {bothAnswered
-              ? result.agreement
-                ? "Both models agree"
-                : "The models disagree"
-              : `${downEngines.join(" and ")} did not answer`}
-          </p>
-        </div>
-        <div className="flex gap-8">
-          <Stat label="faster" value={bothAnswered ? faster : "—"} />
-          <Stat
-            label="speedup"
-            value={result.speedup_factor === null ? "—" : `${result.speedup_factor.toFixed(2)}x`}
-          />
-          <Stat
-            label="gap"
-            value={
-              result.latency_diff_ms === null
-                ? "—"
-                : `${Math.round(Math.abs(result.latency_diff_ms))} ms`
-            }
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <EngineCard name="Laya" tone="fast" data={result.laya} />
-        <EngineCard name="Jev" tone="slow" data={result.jev} />
-      </div>
-    </motion.div>
-  );
-}
-
 function EngineCard({
   name,
   tone,
   data,
+  searchEnabled,
+  searchLatencyMs,
+  showEvidence = true,
 }: {
   name: string;
   tone: "fast" | "slow";
   data: System1Decision;
+  searchEnabled: boolean;
+  searchLatencyMs?: number;
+  showEvidence?: boolean;
 }) {
   const outcome = data.choice ?? (data.score !== undefined ? data.score.toFixed(3) : "n/a");
   const colour = tone === "fast" ? "text-fast" : "text-slow";
 
-  // The card keeps its slot in the grid so the surviving engine does not jump
-  // across the page when its neighbour dies.
   if (data.error) {
     return (
       <Panel
@@ -783,11 +792,19 @@ function EngineCard({
     );
   }
 
+  const searchText = !searchEnabled
+    ? "off"
+    : searchLatencyMs !== undefined
+      ? `${Math.round(searchLatencyMs)} ms`
+      : "—";
+
   return (
     <Panel
       title={name.toLowerCase()}
       right={
-        <span className="tnum text-[11px] text-ink-faint">{Math.round(data.latency_ms)} ms</span>
+        <span className="tnum text-[11px] text-ink-faint">
+          {Math.round(data.latency_ms)} ms pure
+        </span>
       }
     >
       <div className="px-7 py-6">
@@ -799,12 +816,18 @@ function EngineCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-y border-rule bg-sunken px-7 py-4">
+      <div
+        className={`grid grid-cols-2 gap-4 bg-sunken px-7 py-4 sm:grid-cols-4 ${
+          showEvidence ? "border-y border-rule" : "border-t border-rule"
+        }`}
+      >
+        <Stat label="engine (pure)" value={`${Math.round(data.latency_ms)} ms`} tone={colour} />
+        <Stat label="web search" value={searchText} />
         <Stat label="confidence" value={data.confidence.toFixed(4)} />
         <Stat label="sources" value={`${data.sources.length}`} />
       </div>
 
-      <EvidenceLedger sources={data.sources} />
+      {showEvidence && <EvidenceLedger sources={data.sources} searchEnabled={searchEnabled} />}
     </Panel>
   );
 }

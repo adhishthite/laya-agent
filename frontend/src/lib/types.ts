@@ -10,7 +10,7 @@ export interface LayaProbe {
 }
 
 /** Which step of the pipeline a streamed event describes. */
-export type StreamStage = "search" | "laya" | "jev" | "deliberation" | "result";
+export type StreamStage = "search" | "laya" | "jev" | "result";
 
 export type StreamStatus = "start" | "done" | "error";
 
@@ -20,11 +20,6 @@ export interface SourceContribution {
   is_supporting: boolean;
 }
 
-export interface System2Synthesis {
-  explanation: string;
-  latency_ms: number;
-}
-
 export interface DecisionResult {
   query: string;
   decision: string;
@@ -32,11 +27,12 @@ export interface DecisionResult {
   probabilities: Record<string, number>;
   handled_by: string;
   search_enabled: boolean;
+  search_latency_ms: number;
+  laya_latency_ms: number;
   evidence: string[];
   sources: SourceContribution[];
-  system2_synthesis?: System2Synthesis;
   total_latency_ms: number;
-  /** Set when Laya could not answer. Gemini answered alone. */
+  /** Set when Laya could not answer. */
   system1_error?: string | null;
 }
 
@@ -53,6 +49,8 @@ export interface System1Decision {
 
 export interface ComparisonResult {
   query: string;
+  search_enabled: boolean;
+  search_latency_ms: number;
   evidence: string[];
   laya: System1Decision;
   jev: System1Decision;
@@ -72,11 +70,12 @@ export interface ComparisonResult {
 export interface StreamEvent {
   stage: StreamStage;
   status: StreamStatus;
-  /** Measured from the start of the run, not of the stage. */
+  /** Wall time from the start of the run. */
   elapsed_ms: number;
+  /** Pure duration of this stage alone (web search time or single-pass model latency). */
+  latency_ms?: number;
   evidence?: string[];
   decision?: System1Decision;
-  synthesis?: System2Synthesis;
   decision_result?: DecisionResult;
   comparison?: ComparisonResult;
   error?: string;

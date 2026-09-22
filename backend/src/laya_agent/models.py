@@ -59,30 +59,20 @@ class System1Decision(BaseModel):
     error: str | None = None
 
 
-class System2Synthesis(BaseModel):
-    """Output from Gemini 3.5 Flash-Lite System 2 deliberation."""
-
-    explanation: str
-    risk_assessment: str | None = None
-    recommended_action: str | None = None
-    latency_ms: float = 0.0
-
-
 class DecisionResult(BaseModel):
-    """End-to-end result from the Dual-Process Agent."""
+    """Result from a Laya-only System 1 run."""
 
     query: str
     decision: str
     confidence: float
     probabilities: dict[str, float]
-    handled_by: str  # "System 1 (Laya)" or "System 2 (Gemini Deliberation)"
+    handled_by: str = "Laya"
     search_enabled: bool = False
+    search_latency_ms: float = 0.0
+    laya_latency_ms: float = 0.0
     evidence: list[str] = Field(default_factory=list)
     sources: list[SourceContribution] = Field(default_factory=list)
-    system2_synthesis: System2Synthesis | None = None
     total_latency_ms: float = 0.0
-    # Set when Laya could not answer. The result still carries System 2's
-    # deliberation, so the caller gets a reasoned answer rather than a 500.
     system1_error: str | None = None
 
 
@@ -95,6 +85,8 @@ class ComparisonResult(BaseModel):
     """
 
     query: str
+    search_enabled: bool = True
+    search_latency_ms: float = 0.0
     evidence: list[str] = Field(default_factory=list)
     laya: System1Decision
     jev: System1Decision
@@ -110,7 +102,6 @@ class StreamStage(str, Enum):
     SEARCH = "search"
     LAYA = "laya"
     JEV = "jev"
-    DELIBERATION = "deliberation"
     RESULT = "result"
 
 
@@ -125,23 +116,19 @@ class StreamStatus(str, Enum):
 class StreamEvent(BaseModel):
     """One line of a streamed run.
 
-    A full run takes tens of seconds and spends most of it waiting on three
-    different backends. Holding every stage until the last one finishes makes a
-    working run indistinguishable from a hang, so each stage is reported as it
-    happens and the caller renders it immediately.
-
     Only the payload field that belongs to the stage is populated; the rest are
     dropped on the wire.
     """
 
     stage: StreamStage
     status: StreamStatus
-    # Measured from the start of the run, not of the stage, so the caller can
-    # place each event on one timeline without doing arithmetic.
+    # Wall time from the start of the run.
     elapsed_ms: float
+    # Pure duration of this stage alone (e.g., web search time or pure engine
+    # single-pass inference latency).
+    latency_ms: float | None = None
     evidence: list[str] | None = None
     decision: System1Decision | None = None
-    synthesis: System2Synthesis | None = None
     decision_result: DecisionResult | None = None
     comparison: ComparisonResult | None = None
     error: str | None = None

@@ -32,16 +32,12 @@ def decide(
     question_type: str = typer.Option(
         "choice", "--type", "-t", help="Question type: choice or score"
     ),
-    threshold: float = typer.Option(
-        0.60, "--threshold", help="Confidence threshold to trigger System 2"
-    ),
     search: bool = typer.Option(True, "--search/--no-search", help="Enable web search grounding"),
     attribution: bool = typer.Option(
         True, "--attribution/--no-attribution", help="Compute source attribution"
     ),
-    force_s2: bool = typer.Option(False, "--force-s2", help="Force System 2 deliberation"),
 ) -> None:
-    """Run a dual-process decision on a query."""
+    """Run a Laya System 1 decision on a query."""
     criteria_dict = {}
     for item in criteria:
         if ":" in item:
@@ -53,16 +49,14 @@ def decide(
     q_type = QuestionType.CHOICE if question_type.lower() == "choice" else QuestionType.SCORE
 
     console.print(f"[bold cyan]Query:[/bold cyan] {query}")
-    with console.status("[bold green]Executing Dual-Process Decision Pipeline...[/bold green]"):
-        settings = Settings(confidence_threshold=threshold)
-        agent = DualProcessAgent(settings=settings)
+    with console.status("[bold green]Executing Laya System 1 Decision Pipeline...[/bold green]"):
+        agent = DualProcessAgent()
         result = agent.decide(
             query=query,
             criteria=criteria_dict,
             question_type=q_type,
             enable_search=search,
             compute_attribution=attribution,
-            force_system2=force_s2,
         )
 
     # Render results table
@@ -71,8 +65,10 @@ def decide(
     table.add_column("Value", style="bold white")
 
     table.add_row("Winning Decision", f"[bold green]{result.decision.upper()}[/bold green]")
-    table.add_row("Execution Path", f"[magenta]{result.handled_by}[/magenta]")
+    table.add_row("Engine", f"[magenta]{result.handled_by}[/magenta]")
     table.add_row("Confidence Score", f"{result.confidence:.4f}")
+    table.add_row("Web Search Latency", f"{result.search_latency_ms:.1f} ms")
+    table.add_row("Laya Latency", f"{result.laya_latency_ms:.1f} ms")
     table.add_row("Total Latency", f"{result.total_latency_ms:.1f} ms")
 
     prob_str = ", ".join(f"{k}: {v:.2%}" for k, v in result.probabilities.items())
@@ -92,16 +88,6 @@ def decide(
             src_table.add_row(impact_text, src.source_text)
 
         console.print(src_table)
-
-    # Render System 2 Deliberation Panel if invoked
-    if result.system2_synthesis:
-        console.print(
-            Panel(
-                result.system2_synthesis.explanation,
-                title="[bold yellow]System 2 Deliberative Synthesis[/bold yellow]",
-                border_style="yellow",
-            )
-        )
 
 
 @app.command()

@@ -131,11 +131,11 @@ class System1JevClient:
         target_choice: str,
         baseline_prob: float,
     ) -> list[SourceContribution]:
-        """Compute leave-one-out source attribution across evidence snippets."""
-        contributions: list[SourceContribution] = []
+        """Compute leave-one-out source attribution across evidence snippets concurrently."""
+        from concurrent.futures import ThreadPoolExecutor
 
-        for i, excluded_source in enumerate(evidence_list):
-            subset = [src for j, src in enumerate(evidence_list) if j != i]
+        def probe_without(index: int, excluded_source: str) -> SourceContribution:
+            subset = [src for j, src in enumerate(evidence_list) if j != index]
             payload = {
                 "model": "jev-latest",
                 "state": {
@@ -155,21 +155,25 @@ class System1JevClient:
                 ans = raw_res.get("answers", {}).get("decision", {})
                 subset_prob = ans.get("probabilities", {}).get(target_choice, 0.0)
                 delta = round((baseline_prob - subset_prob) * 100.0, 2)
-                contributions.append(
-                    SourceContribution(
-                        source_text=excluded_source,
-                        impact_points=delta,
-                        is_supporting=(delta >= 0),
-                    )
+                return SourceContribution(
+                    source_text=excluded_source,
+                    impact_points=delta,
+                    is_supporting=(delta >= 0),
                 )
             except Exception:
-                contributions.append(
-                    SourceContribution(
-                        source_text=excluded_source,
-                        impact_points=0.0,
-                        is_supporting=True,
-                    )
+                return SourceContribution(
+                    source_text=excluded_source,
+                    impact_points=0.0,
+                    is_supporting=True,
                 )
+
+        with ThreadPoolExecutor(max_workers=max(1, len(evidence_list))) as pool:
+            contributions = list(
+                pool.map(
+                    lambda pair: probe_without(pair[0], pair[1]),
+                    enumerate(evidence_list),
+                )
+            )
 
         contributions.sort(key=lambda s: abs(s.impact_points), reverse=True)
         return contributions

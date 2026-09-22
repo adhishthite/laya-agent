@@ -4,14 +4,12 @@ import json
 from unittest.mock import MagicMock
 
 from laya_agent.agent import DualProcessAgent
-from laya_agent.config import Settings
 from laya_agent.models import (
     QuestionType,
     StreamEvent,
     StreamStage,
     StreamStatus,
     System1Decision,
-    System2Synthesis,
 )
 from laya_agent.server import _ndjson
 
@@ -28,12 +26,11 @@ def _decision(choice: str, latency_ms: float, confidence: float = 0.9) -> System
 
 
 def test_decide_stream_reports_every_stage_in_order():
-    settings = Settings(confidence_threshold=0.60)
     mock_s1, mock_s2 = MagicMock(), MagicMock()
     mock_s2.search_web.return_value = ["Source 1"]
     mock_s1.predict.return_value = _decision("yes", 40.0)
 
-    agent = DualProcessAgent(settings=settings, system1_client=mock_s1, system2_client=mock_s2)
+    agent = DualProcessAgent(system1_client=mock_s1, system2_client=mock_s2)
     events = list(agent.decide_stream(query="Rain?", criteria={"yes": "Rain", "no": "Dry"}))
 
     assert [(e.stage, e.status) for e in events] == [
@@ -44,18 +41,17 @@ def test_decide_stream_reports_every_stage_in_order():
         (StreamStage.RESULT, StreamStatus.DONE),
     ]
     assert events[1].evidence == ["Source 1"]
+    assert events[1].latency_ms is not None
+    assert events[3].latency_ms == 40.0
     assert events[-1].decision_result is not None
+    assert events[-1].decision_result.laya_latency_ms == 40.0
 
 
-def test_decide_stream_announces_deliberation_before_running_it():
-    """The start event must precede the call, or the UI cannot show the wait."""
-    settings = Settings(confidence_threshold=0.60)
+def test_decide_stream_without_search_skips_grounding_stage():
     mock_s1, mock_s2 = MagicMock(), MagicMock()
-    mock_s2.search_web.return_value = []
-    mock_s1.predict.return_value = _decision("yes", 40.0, confidence=0.2)
-    mock_s2.deliberate.return_value = System2Synthesis(explanation="Ambiguous.", latency_ms=300.0)
+    mock_s1.predict.return_value = _decision("yes", 37.5, confidence=0.07)
 
-    agent = DualProcessAgent(settings=settings, system1_client=mock_s1, system2_client=mock_s2)
+    agent = DualProcessAgent(system1_client=mock_s1, system2_client=mock_s2)
     events = list(
         agent.decide_stream(
             query="Rain?", criteria={"yes": "Rain", "no": "Dry"}, enable_search=False
@@ -63,11 +59,14 @@ def test_decide_stream_announces_deliberation_before_running_it():
     )
 
     stages = [(e.stage, e.status) for e in events]
-    assert (StreamStage.DELIBERATION, StreamStatus.START) in stages
-    assert stages.index((StreamStage.DELIBERATION, StreamStatus.START)) < stages.index(
-        (StreamStage.DELIBERATION, StreamStatus.DONE)
-    )
+    assert stages == [
+        (StreamStage.LAYA, StreamStatus.START),
+        (StreamStage.LAYA, StreamStatus.DONE),
+        (StreamStage.RESULT, StreamStatus.DONE),
+    ]
+    assert events[1].latency_ms == 37.5
     assert events[-1].decision_result is not None
+    assert events[-1].decision_result.search_latency_ms == 0.0
 
 
 def test_compare_stream_emits_the_faster_engine_first():
