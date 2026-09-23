@@ -1,6 +1,6 @@
 .PHONY: deploy set-upstream status logs
 
-PROJECT ?= adhish-base-project-1
+PROJECT ?= your-project-id
 REGION  ?= asia-south1
 SERVICE ?= laya-gpu-proxy
 GPU_VM_URL ?= http://10.0.2.10:8080

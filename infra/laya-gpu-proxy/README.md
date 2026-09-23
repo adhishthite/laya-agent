@@ -18,6 +18,7 @@ which zone the VM currently lives in.
 | `GPU_VM_URL` | `http://10.0.2.10:8080` | Upstream GPU VM |
 | `HEALTH_TIMEOUT_SECONDS` | `5.0` | Deadline for `/health` |
 | `PREDICT_TIMEOUT_SECONDS` | `30.0` | Deadline for `/predict` |
+| `CONNECT_TIMEOUT_SECONDS` | `2.5` | TCP connect deadline to fail fast on stopped VM |
 
 `GPU_VM_URL` points at a reserved internal address, not at an ephemeral one. The
 reservation outlives the instance, so a zone rebuild reattaches the same address
@@ -42,5 +43,6 @@ An unreachable VM returns HTTP 502 with a JSON body naming the reason:
 
     {"error": "...", "error_type": "ConnectTimeout", "upstream": "http://10.0.2.10:8080"}
 
-A stopped VM drops packets rather than refusing them, so this costs the full
-`PREDICT_TIMEOUT_SECONDS` instead of failing fast.
+A stopped VM drops packets rather than refusing them. The proxy configures
+`CONNECT_TIMEOUT_SECONDS=2.5s` so connection attempts fail fast in 2.5 seconds
+instead of waiting for the full prediction timeout.
