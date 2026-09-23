@@ -67,6 +67,9 @@ The root directory, `frontend/`, and `backend/` implement these standard targets
 | `make lint` | Run linters (`biome` / `ruff check`). |
 | `make clean` | Clean build artifacts and cache files. |
 | `make check` | Run full validation pipeline (`format` -> `lint` -> `test`). |
+| `make start-vm` | Check gcloud auth and start the GPU VM if stopped. |
+| `make stop-vm` | Stop the GPU VM to halt compute charges immediately. |
+| `make status-vm` | Display GPU VM status, machine type, and provisioning model. |
 
 ## 4. Architectural Rules and Guardrails
 

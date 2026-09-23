@@ -181,3 +181,6 @@ uv run --directory backend laya-agent status
 | `make lint` | Lint code (`ruff check` + `biome check`) |
 | `make clean` | Remove build artifacts and temporary cache files |
 | `make check` | Run complete validation pipeline (`format` -> `lint` -> `test`) |
+| `make start-vm` | Check gcloud auth and start the GPU VM if stopped |
+| `make stop-vm` | Stop the GPU VM to halt compute charges immediately |
+| `make status-vm` | Display GPU VM status, machine type, and provisioning model |
