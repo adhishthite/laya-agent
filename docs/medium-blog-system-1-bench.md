@@ -4,6 +4,8 @@ When you give a decision model live Google Search evidence, it acts as a calibra
 
 I pitted ConvAI Laya and TypeSafe Jev against each other—and open-sourced the benchmark—to understand how System 1 models actually behave in production, both with live web grounding and on raw model priors.
 
+The entire system runs on Google Cloud infrastructure. It brings together Vertex AI for live search grounding, Compute Engine with NVIDIA L4 GPUs for fast decision inference, and Cloud Run for serverless networking.
+
 For two years, AI engineering has suffered from an "LLM-for-everything" anti-pattern. Every time an agent needs to route a ticket, check a policy, or evaluate a condition, we prompt a 70B generative model, wait two to four seconds for tokens, and parse a JSON object. We burn thousands of tokens on tasks that require zero text generation.
 
 In cognitive psychology, Kahneman's System 1 handles fast, automatic reflexes, while System 2 handles slow, deliberate analysis. AI agents need the exact same division of labor. You do not wake up a 70B reasoning model to decide whether to open an umbrella; you use a fast, calibrated reflex.
@@ -42,9 +44,13 @@ In the UI, you see an evidence ledger. It shows whether a source added 18 points
 
 Many teams avoid self-hosting models because GPU servers cost too much when idle.
 
-I solved this with two simple components on Google Cloud. First, a Cloud Run proxy connects to the private GPU instance across the VPC with zero public IPs. Second, a 30-minute watchdog script runs on the VM.
+Google Cloud makes this architecture practical, fast, and secure. The entire platform runs on three core Google Cloud services:
 
-If no requests arrive for 30 minutes, the VM turns itself off. Compute and GPU billing stops immediately. The idle cost is $0.
+1. **Compute Engine with NVIDIA L4 GPUs**: The `g2-standard-4` instance hosts the Laya model in a private subnet with zero public IPs. It delivers 37-millisecond decision inference without internet exposure.
+2. **Cloud Run with Direct VPC Egress**: Cloud Run scales to zero instances when idle. It verifies IAM identity tokens and connects directly to the private GPU instance across the VPC. You do not need expensive static load balancers or public IP addresses.
+3. **Vertex AI Search Grounding**: Gemini 3.5 Flash-Lite retrieves live web citations using Google Search in a single API call.
+
+To eliminate idle waste, I installed a 30-minute watchdog script on the GPU instance. If no requests arrive for 30 minutes, the instance executes a clean shutdown. Compute and GPU billing stops immediately. The idle compute cost is $0.
 
 How should you use this in your own systems?
 
