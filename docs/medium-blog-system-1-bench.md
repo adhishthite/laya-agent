@@ -12,11 +12,74 @@ In cognitive psychology, Kahneman's System 1 handles fast, automatic reflexes, w
 
 A System 1 decision model is not a "smaller LLM." It is a non-autoregressive bidirectional encoder (like ModernBERT or mmBERT). Instead of generating text tokens sequentially, it processes the prompt, criteria, and evidence in a single forward pass—returning calibrated probabilities across discrete choices in under 40 milliseconds.
 
+```mermaid
+flowchart LR
+    subgraph S2["Generative LLM (System 2)"]
+        direction TB
+        Q1["Prompt & Scenario"] --> Dec["70B Decoder Model"]
+        Dec --> Gen["Sequential Token Generation\n(1,500ms - 4,000ms)"]
+        Gen --> Parse["JSON Parsing\nBoolean Flag"]
+    end
+
+    subgraph S1["Decision Model (System 1)"]
+        direction TB
+        Q2["Prompt & Criteria"] --> Enc["ModernBERT / mmBERT\nBidirectional Encoder"]
+        Enc --> Pass["Single Forward Pass\n(37ms on NVIDIA L4)"]
+        Pass --> Cal["Calibrated Probabilities\nDirect Choice"]
+    end
+
+    style S2 fill:#f8f9fa,stroke:#e9ecef,stroke-width:1px
+    style S1 fill:#f0f7ff,stroke:#cce3fd,stroke-width:2px
+    style Q1 fill:#ffffff,stroke:#ced4da
+    style Dec fill:#ffffff,stroke:#ced4da
+    style Gen fill:#ffe3e3,stroke:#ffa8a8,color:#c92a2a
+    style Parse fill:#ffffff,stroke:#ced4da
+    style Q2 fill:#ffffff,stroke:#b2d4ff
+    style Enc fill:#ffffff,stroke:#b2d4ff
+    style Pass fill:#d3f9d8,stroke:#8ce99a,color:#2b8a3e
+    style Cal fill:#ffffff,stroke:#8ce99a
+```
+
 To test this in practice, I compared the two primary System 1 engines available today: ConvAI Laya and TypeSafe Jev. Laya is an open-weight model that I self-hosted on an NVIDIA L4 GPU on Google Cloud. Jev is a multi-tenant proprietary SaaS API. Both receive the exact same inputs: a scenario, a set of discrete criteria, and optional web citations. I wanted to see whether open weights on private hardware could match or outperform a specialized commercial endpoint.
 
 What makes these models calibrated where generative LLMs fail? The foundation is RLCD—Reinforcement Learning from Compiler/Critic Demonstrations. Instead of relying on human preference scores (RLHF) that reward plausible-sounding prose, RLCD trains the encoder against deterministic compilers and formal critics. When the model reports 82% confidence, it reflects genuine calibration, not hallucinated bravado.
 
 I structured the benchmark around two modes. In the first mode, both models receive live Google Search citations retrieved via Vertex AI Gemini 3.5 Flash-Lite. In the second mode, I disable search completely, forcing the models to decide purely from their pre-trained weights. This side-by-side comparison answers a fundamental question: how much does external evidence actually shift a System 1 verdict, and how does the model behave when relying solely on its priors?
+
+```mermaid
+flowchart TD
+    UserQuery["User Scenario & Criteria"] --> ModeCheck{"Web Grounding?"}
+
+    ModeCheck -- "Enabled" --> Search["Vertex AI Gemini 3.5 Flash-Lite\ngoogle_search Tool"]
+    Search --> Evidence["Web Citations & Snippets\n(1,150ms)"]
+    ModeCheck -- "Disabled" --> RawPriors["Raw Priors\n(0ms Search)"]
+
+    Evidence --> Dispatch["Parallel Dispatch"]
+    RawPriors --> Dispatch
+
+    subgraph Engines["System 1 Inference Engines"]
+        Dispatch --> Laya["ConvAI Laya\nNVIDIA L4 GPU on GCP\n(37ms)"]
+        Dispatch --> Jev["TypeSafe Jev\nMulti-Tenant SaaS API\n(265ms)"]
+    end
+
+    Laya --> Attribution["Leave-One-Out Attribution\nPer-Source Delta Points"]
+    Jev --> Confidence["Calibrated Probabilities\nVerdict Confidence"]
+
+    Attribution --> Stream["Progressive NDJSON Stream"]
+    Confidence --> Stream
+    Stream --> UI["React 19 Console\nZero-Reload Progressive Render"]
+
+    style UserQuery fill:#ffffff,stroke:#4285F4,stroke-width:2px
+    style ModeCheck fill:#fef3c7,stroke:#f59e0b,stroke-width:1px
+    style Search fill:#ffffff,stroke:#4285F4
+    style Evidence fill:#eff6ff,stroke:#93c5fd
+    style RawPriors fill:#f3f4f6,stroke:#9ca3af
+    style Laya fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+    style Jev fill:#eff6ff,stroke:#3b82f6,stroke-width:2px
+    style Attribution fill:#f0fdf4,stroke:#86efac
+    style Confidence fill:#eff6ff,stroke:#93c5fd
+    style UI fill:#ffffff,stroke:#10b981,stroke-width:2px
+```
 
 ![Head-to-Head Comparison with Live Web Grounding](images/flow-both-web-dark.png)
 
@@ -49,6 +112,30 @@ Google Cloud makes this architecture practical, fast, and secure. The entire pla
 1. **Compute Engine with NVIDIA L4 GPUs**: The `g2-standard-4` instance hosts the Laya model in a private subnet with zero public IPs. It delivers 37-millisecond decision inference without internet exposure.
 2. **Cloud Run with Direct VPC Egress**: Cloud Run scales to zero instances when idle. It verifies IAM identity tokens and connects directly to the private GPU instance across the VPC. You do not need expensive static load balancers or public IP addresses.
 3. **Vertex AI Search Grounding**: Gemini 3.5 Flash-Lite retrieves live web citations using Google Search in a single API call.
+
+```mermaid
+flowchart LR
+    Client["Browser / Client"] --> RunProxy["Cloud Run Proxy\n(Direct VPC Egress)\nmin-instances: 0"]
+
+    subgraph VPC["Google Cloud Private VPC (asia-south1)"]
+        RunProxy -- "Private Egress\n(private-ranges-only)" --> Subnet["Private Subnet\n10.0.2.0/24"]
+        Subnet --> GCE["GCE VM: laya-gpu-spot-v2\ng2-standard-4 (NVIDIA L4 GPU)\nFastAPI on port 8080"]
+        GCE --> Watchdog["Server-Side Idle Watchdog\nAuto-Poweroff after 30m Idle\n$0 Idle Compute Spend"]
+    end
+
+    subgraph Vertex["Google Cloud Managed AI"]
+        Client -. "Grounding Query" .-> VertexSearch["Vertex AI\nGemini 3.5 Flash-Lite\ngoogle_search Tool"]
+    end
+
+    style Client fill:#ffffff,stroke:#4285F4,stroke-width:2px
+    style RunProxy fill:#e8f0fe,stroke:#4285F4,stroke-width:2px
+    style VPC fill:#f8fafd,stroke:#1a73e8,stroke-dasharray: 5 5
+    style Subnet fill:#ffffff,stroke:#bdc1c6
+    style GCE fill:#e6f4ea,stroke:#34a853,stroke-width:2px
+    style Watchdog fill:#fef7e0,stroke:#f9ab00,stroke-width:1px
+    style Vertex fill:#fef7e0,stroke:#f9ab00,stroke-dasharray: 5 5
+    style VertexSearch fill:#ffffff,stroke:#f9ab00,stroke-width:1px
+```
 
 To eliminate idle waste, I installed a 30-minute watchdog script on the GPU instance. If no requests arrive for 30 minutes, the instance executes a clean shutdown. Compute and GPU billing stops immediately. The idle compute cost is $0.
 
